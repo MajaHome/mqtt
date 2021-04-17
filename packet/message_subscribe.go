@@ -6,8 +6,8 @@ import (
 )
 
 type SubscribePayload struct {
-	Topic string
 	QoS QoS
+	Topic string
 }
 
 func (p *SubscribePayload) ToString() string {

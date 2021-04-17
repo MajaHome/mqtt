@@ -1,6 +1,7 @@
 package packet
 
 import (
+	"encoding/binary"
 	"errors"
 )
 
@@ -78,7 +79,7 @@ func (t Type) ToString() string {
 	case PONG:
 		return "Pong"
 	case DISCONNECT:
-		return "Disconnect"
+		return "Flag"
 	}
 
 	return "Unknown"
@@ -155,4 +156,16 @@ func ReadBytes(buf []byte, offset int, length int) ([]byte, int, error) {
 func ReadString(buf []byte, offset int, length int) (string, int, error) {
 	s, i, e := ReadBytes(buf, offset, length)
 	return string(s), i, e
+}
+
+func WriteInt8(buf []byte, offset int, value uint8) int {
+	buf[offset] = value
+	offset++
+	return offset
+}
+
+func WriteInt16(buf []byte, offset int, value uint16) int {
+	binary.BigEndian.PutUint16(buf[offset:], 0x04)
+	offset += 2
+	return offset
 }

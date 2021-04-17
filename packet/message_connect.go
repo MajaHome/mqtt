@@ -23,8 +23,7 @@ func (c *ConnectPacket) Type() Type{
 }
 
 func (c *ConnectPacket) Length() int {
-	var l int = 0
-	l += 2/*packet type + size/ + 2 /*hdr len*/ + 6 /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
+	var l int = 2/*packet type + size/ + 2 /*hdr len*/ + 6 /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
 	if c.Will != nil {
 		l += 2 /*len*/ + len(c.Will.Topic) + 2 /*len*/ + len(c.Will.Payload)
 	}
@@ -97,10 +96,10 @@ func (c *ConnectPacket) Unpack(buf []byte) error {
 
 	if willFlag {
 		c.Will = &Message{
-			QoS:            willQoS,
-			Retain:         willRetain,
-			Dublicate:      false,
-			DisconnectFlag: false,
+			QoS:       willQoS,
+			Retain:    willRetain,
+			Dublicate: false,
+			Flag:      false,
 		}
 	}
 
@@ -140,7 +139,7 @@ func (c *ConnectPacket) Unpack(buf []byte) error {
 			return err
 		}
 
-		c.Will.Payload, offset, err = ReadBytes(buf, offset, int(pLen))
+		c.Will.Payload, offset, err = ReadString(buf, offset, int(pLen))
 		if err != nil {
 			return err
 		}
@@ -170,12 +169,36 @@ func (c *ConnectPacket) Unpack(buf []byte) error {
 }
 
 func (c *ConnectPacket) Pack() ([]byte, error) {
+	offset := 0
 	buf := make([]byte, c.Length())
 
-	buf[0] = byte(CONNECT) << 4
-	buf[1] = byte(c.Length())
+	offset = WriteInt8(buf, offset, byte(CONNECT) << 4)
+	offset = WriteInt8(buf, offset, byte(c.Length()))
+	offset = WriteInt16(buf, offset, 0x04)
 
-	// todo
+	buf = append(buf, []byte("MQTT")...)
+	offset += 4
+	offset = WriteInt8(buf, offset, byte(0x04))
+
+	var flag uint8 = 0x0
+	//
+	offset = WriteInt8(buf, offset, flag)
+
+	// keepalive uint16
+	// clid len uint16
+	// cl string
+
+	// if will
+	// topicLen uint16
+	// topic string
+	// payloadlen uint16
+	// payload []byte
+
+	// loginLen uint16
+	// login string
+
+	// passLen uint16
+	// pass string
 
 	return buf, nil
 }
