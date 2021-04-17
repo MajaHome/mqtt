@@ -23,11 +23,11 @@ func ConnectAck() *ConnectAckPacket {
 }
 
 func (cack *ConnectAckPacket) Type() Type {
-	return CONNECTACK
+	return CONNACK
 }
 
 func (cack *ConnectAckPacket) Length() int {
-	return 2+2
+	return 2
 }
 
 func (cack *ConnectAckPacket) Unpack(buf []byte) error {
@@ -66,8 +66,8 @@ func (cack *ConnectAckPacket) Unpack(buf []byte) error {
 func (cack *ConnectAckPacket) Pack() ([]byte, error) {
 	buf := make([]byte, 4)
 
-	buf[0] = byte(CONNECTACK) << 4
-	buf[1] = 2	// Size
+	buf[0] = byte(CONNACK) << 4
+	buf[1] = byte(cack.Length())	// Size
 	if cack.Session {
 		buf[2] = 0x01
 	} else {

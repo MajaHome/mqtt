@@ -16,16 +16,16 @@ type Type byte
 const (
 	RESERVED Type = iota
 	CONNECT
-	CONNECTACK
+	CONNACK
 	PUBLISH
-	PUBLISHACK
-	PUBLISHREC
-	PUBLISHREL
-	PUBLISHCOMP
+	PUBACK
+	PUBREC
+	PUBREL
+	PUBCOMP
 	SUBSCRIBE
-	SUBSCRIBEACK
+	SUBACK
 	UNSUBSCRIBE
-	UNSUBSCRIBEACK
+	UNSUBACK
 	PING
 	PONG
 	DISCONNECT
@@ -40,10 +40,12 @@ type Packet interface {
 }
 
 func Types() []Type {
-	return []Type{RESERVED, CONNECT, CONNECTACK,
-		PUBLISH, PUBLISHACK, PUBLISHREC, PUBLISHREL, PUBLISHCOMP,
-		SUBSCRIBE, SUBSCRIBEACK, UNSUBSCRIBE, UNSUBSCRIBEACK,
-		PING, PONG, DISCONNECT}
+	return []Type{RESERVED, CONNECT, CONNACK,
+		PUBLISH, PUBACK, PUBREC, PUBREL, PUBCOMP,
+		SUBSCRIBE, SUBACK,
+		UNSUBSCRIBE, UNSUBACK,
+		PING, PONG,
+		DISCONNECT}
 }
 
 // String returns the type as a string.
@@ -51,25 +53,25 @@ func (t Type) ToString() string {
 	switch t {
 	case CONNECT:
 		return "Connect"
-	case CONNECTACK:
+	case CONNACK:
 		return "ConnectAck"
 	case PUBLISH:
 		return "Publish"
-	case PUBLISHACK:
+	case PUBACK:
 		return "PublishAck"
-	case PUBLISHREC:
+	case PUBREC:
 		return "PublishRec"
-	case PUBLISHREL:
+	case PUBREL:
 		return "PublishRel"
-	case PUBLISHCOMP:
+	case PUBCOMP:
 		return "PublishComp"
 	case SUBSCRIBE:
 		return "Subscribe"
-	case SUBSCRIBEACK:
+	case SUBACK:
 		return "SubscribeAck"
 	case UNSUBSCRIBE:
 		return "Unsubscribe"
-	case UNSUBSCRIBEACK:
+	case UNSUBACK:
 		return "UnsubscribeAck"
 	case PING:
 		return "Ping"
@@ -86,25 +88,25 @@ func (t Type) Create() (Packet, error) {
 	switch t {
 	case CONNECT:
 		return Connect(), nil
-	case CONNECTACK:
+	case CONNACK:
 		return ConnectAck(), nil
 	case PUBLISH:
 		return Publish(), nil
-	case PUBLISHACK:
+	case PUBACK:
 		return PublishAck(), nil
-	case PUBLISHREC:
+	case PUBREC:
 		return PublishRec(), nil
-	case PUBLISHREL:
+	case PUBREL:
 		return PublishRel(), nil
-	case PUBLISHCOMP:
+	case PUBCOMP:
 		return PublishComp(), nil
 	case SUBSCRIBE:
 		return Subscribe(), nil
-	case SUBSCRIBEACK:
+	case SUBACK:
 		return SubscribeAck(), nil
 	case UNSUBSCRIBE:
 		return UnSubscribe(), nil
-	case UNSUBSCRIBEACK:
+	case UNSUBACK:
 		return UnSubscribeAck(), nil
 	case PING:
 		return Ping(), nil
@@ -132,7 +134,7 @@ func ReadInt16(buf []byte, offset int) (uint16, int, error) {
 	var value uint16
 
 	if len(buf) >= (offset+2) {
-		value = uint16(buf[offset] << 4 + buf[offset+1])
+		value = uint16(buf[offset+1]) | uint16(buf[offset])<<8
 		return value, offset + 2, nil
 	}
 

@@ -12,7 +12,7 @@ func PublishAck() *PublishAckPacket {
 }
 
 func (pack *PublishAckPacket) Type() Type {
-	return PUBLISHACK
+	return PUBACK
 }
 
 func (pack *PublishAckPacket) Length() int {

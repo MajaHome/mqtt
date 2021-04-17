@@ -12,7 +12,7 @@ func PublishComp() *PublishCompPacket {
 }
 
 func (p *PublishCompPacket) Type() Type {
-	return PUBLISHCOMP
+	return PUBCOMP
 }
 
 func (p *PublishCompPacket) Length() int {

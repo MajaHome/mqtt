@@ -12,7 +12,7 @@ func PublishRel() *PublishRelPacket {
 }
 
 func (p *PublishRelPacket) Type() Type {
-	return PUBLISHREL
+	return PUBREL
 }
 
 func (p *PublishRelPacket) Length() int {

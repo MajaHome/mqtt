@@ -12,7 +12,7 @@ func UnSubscribeAck() *UnSubscribeAckPacket {
 }
 
 func (uack *UnSubscribeAckPacket) Type() Type {
-	return UNSUBSCRIBEACK
+	return UNSUBACK
 }
 
 func (uack *UnSubscribeAckPacket) Length() int {

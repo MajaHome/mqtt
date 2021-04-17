@@ -12,7 +12,7 @@ func PublishRec() *PublishRecPacket {
 }
 
 func (p *PublishRecPacket) Type() Type {
-	return PUBLISHREC
+	return PUBREC
 }
 
 func (p *PublishRecPacket) Length() int {

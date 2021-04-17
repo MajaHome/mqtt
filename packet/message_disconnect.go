@@ -1,13 +1,6 @@
 package packet
 
-import (
-
-)
-
-type DisconnectPacket struct {
-	Session bool
-	ReturnCode uint8
-}
+type DisconnectPacket struct {}
 
 func Disconnect() *DisconnectPacket {
 	return &DisconnectPacket{}
@@ -18,9 +11,7 @@ func (cack *DisconnectPacket) Type() Type {
 }
 
 func (cack *DisconnectPacket) Length() int {
-	var l uint8 = 0
-
-	return int(l)
+	return 0
 }
 
 func (cack *DisconnectPacket) Unpack(buf []byte) error {
@@ -28,7 +19,12 @@ func (cack *DisconnectPacket) Unpack(buf []byte) error {
 }
 
 func (cack *DisconnectPacket) Pack() ([]byte, error) {
-	return nil, nil
+	buf := make([]byte, 2)
+
+	buf[0] = byte(DISCONNECT) << 4
+	buf[1] = byte(cack.Length()) // Size
+
+	return buf, nil
 }
 
 func (cack *DisconnectPacket) ToString() string {
