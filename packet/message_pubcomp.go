@@ -4,31 +4,36 @@ import (
 
 )
 
-type PublishCompPacket struct {
+type PubCompPacket struct {
+	Header []byte
 }
 
-func PublishComp() *PublishCompPacket {
-	return &PublishCompPacket{}
+func NewPubComp() *PubCompPacket {
+	return &PubCompPacket{}
 }
 
-func (p *PublishCompPacket) Type() Type {
+func CreatePubComp(buf []byte) *PubCompPacket {
+	return &PubCompPacket{
+		Header: buf,
+	}
+}
+
+func (p *PubCompPacket) Type() Type {
 	return PUBCOMP
 }
 
-func (p *PublishCompPacket) Length() int {
-	var l = 0
-
-	return 2 + l
+func (p *PubCompPacket) Length() int {
+	return 0
 }
 
-func (p *PublishCompPacket) Unpack(buf []byte) error {
+func (p *PubCompPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PublishCompPacket) Pack() ([]byte, error) {
+func (p *PubCompPacket) Pack() ([]byte, error) {
 	return nil, nil
 }
 
-func (p *PublishCompPacket) ToString() string {
-	return "publishcomp: {}"
+func (p *PubCompPacket) ToString() string {
+	return "Message PubComp: {}"
 }

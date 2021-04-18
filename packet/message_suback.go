@@ -5,45 +5,41 @@ import (
 	"strings"
 )
 
-type SubscribeAckPacket struct {
+type SubAckPacket struct {
+	Header []byte
 	Id uint16
 	ReturnCodes []QoS
 }
 
-func SubscribeAck() *SubscribeAckPacket {
-	return &SubscribeAckPacket{}
+func NewSubAck() *SubAckPacket {
+	return &SubAckPacket{}
 }
 
-func (sack *SubscribeAckPacket) Type() Type {
+func CreateSubAck(buf []byte) *SubAckPacket {
+	return &SubAckPacket{
+		Header: buf,
+	}
+}
+
+func (sack *SubAckPacket) Type() Type {
 	return SUBACK
 }
 
-func (sack *SubscribeAckPacket) Length() int {
+func (sack *SubAckPacket) Length() int {
 	return 2 + len(sack.ReturnCodes)
 }
 
-func (sack *SubscribeAckPacket) Unpack(buf []byte) error {
+func (sack *SubAckPacket) Unpack(buf []byte) error {
 	var offset int = 0
 
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
+	id, offset, err := ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
-
-	// packet len
-	bufLen, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	sack.Id, offset, err = ReadInt16(buf, offset)
-	if err != nil {
-		return err
-	}
+	sack.Id = id
 
 	var read uint8 = 2
-	for bufLen > read {
+	for sack.Header[1] > read {
 		var qos byte
 		qos, offset, err = ReadInt8(buf, offset)
 		sack.ReturnCodes = append(sack.ReturnCodes, QoS(qos))
@@ -53,7 +49,7 @@ func (sack *SubscribeAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (sack *SubscribeAckPacket) Pack() ([]byte, error) {
+func (sack *SubAckPacket) Pack() ([]byte, error) {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(SUBACK) << 4
@@ -67,10 +63,10 @@ func (sack *SubscribeAckPacket) Pack() ([]byte, error) {
 	return buf, nil
 }
 
-func (sack *SubscribeAckPacket) ToString() string {
+func (sack *SubAckPacket) ToString() string {
 	var sb strings.Builder
 
-	sb.WriteString("MessageSubAck: [")
+	sb.WriteString("Message SubAck: [")
 	for _, rc := range sack.ReturnCodes {
 		sb.WriteString(", returnCode: ")
 		sb.WriteString(rc.ToString())

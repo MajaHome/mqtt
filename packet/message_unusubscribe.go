@@ -4,31 +4,36 @@ import (
 
 )
 
-type UnSubscribePacket struct {
+type UnSubscriibePacket struct {
+	Header []byte
 }
 
-func UnSubscribe() *UnSubscribePacket {
-	return &UnSubscribePacket{}
+func NewUnSub() *UnSubscriibePacket {
+	return &UnSubscriibePacket{}
 }
 
-func (u *UnSubscribePacket) Type() Type {
+func CreateUnSubscribe(buf []byte) *UnSubscriibePacket {
+	return &UnSubscriibePacket{
+		Header: buf,
+	}
+}
+
+func (u *UnSubscriibePacket) Type() Type {
 	return UNSUBSCRIBE
 }
 
-func (u *UnSubscribePacket) Length() int {
-	var l = 0
-
-	return 2 + l
+func (u *UnSubscriibePacket) Length() int {
+	return 2
 }
 
-func (u *UnSubscribePacket) Unpack(buf []byte) error {
+func (u *UnSubscriibePacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (u *UnSubscribePacket) Pack() ([]byte, error) {
+func (u *UnSubscriibePacket) Pack() ([]byte, error) {
 	return nil, nil
 }
 
-func (u *UnSubscribePacket) ToString() string {
-	return "unsubscribe: {}"
+func (u *UnSubscriibePacket) ToString() string {
+	return "Message Unsubscribe: {}"
 }

@@ -11,39 +11,33 @@ const (
 	ConnectNotAuthorized
 )
 
-type ConnectAckPacket struct {
+type ConnAckPacket struct {
+	Header []byte
 	Session    bool
 	ReturnCode uint8
 }
 
-func ConnectAck() *ConnectAckPacket {
-	return &ConnectAckPacket{
+func NewConnAck() *ConnAckPacket {
+	return &ConnAckPacket{}
+}
+
+func CreateConnAck(buf []byte) *ConnAckPacket {
+	return &ConnAckPacket{
+		Header: buf,
 		Session: false,
 	}
 }
 
-func (cack *ConnectAckPacket) Type() Type {
+func (cack *ConnAckPacket) Type() Type {
 	return CONNACK
 }
 
-func (cack *ConnectAckPacket) Length() int {
+func (cack *ConnAckPacket) Length() int {
 	return 2
 }
 
-func (cack *ConnectAckPacket) Unpack(buf []byte) error {
+func (cack *ConnAckPacket) Unpack(buf []byte) error {
 	var offset int = 0
-
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	// packet len
-	_, offset, err = ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
 
 	acknowledge, offset, err := ReadInt8(buf, offset)
 	if err != nil {
@@ -63,7 +57,7 @@ func (cack *ConnectAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (cack *ConnectAckPacket) Pack() ([]byte, error) {
+func (cack *ConnAckPacket) Pack() ([]byte, error) {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(CONNACK) << 4
@@ -78,7 +72,7 @@ func (cack *ConnectAckPacket) Pack() ([]byte, error) {
 	return buf, nil
 }
 
-func (cack *ConnectAckPacket) ToString() string {
-	return "connectack: { session: " + strconv.FormatBool(cack.Session) + ", code:" +
+func (cack *ConnAckPacket) ToString() string {
+	return "Message ConnAck: { session: " + strconv.FormatBool(cack.Session) + ", code:" +
 		strconv.Itoa(int(cack.ReturnCode)) + "}"
 }

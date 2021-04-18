@@ -4,31 +4,36 @@ import (
 
 )
 
-type PublishRelPacket struct {
+type PubRelPacket struct {
+	Header []byte
 }
 
-func PublishRel() *PublishRelPacket {
-	return &PublishRelPacket{}
+func NewPubRel() *PubRelPacket {
+	return &PubRelPacket{}
 }
 
-func (p *PublishRelPacket) Type() Type {
+func CreatePubRel(buf []byte) *PubRelPacket {
+	return &PubRelPacket{
+		Header: buf,
+	}
+}
+
+func (p *PubRelPacket) Type() Type {
 	return PUBREL
 }
 
-func (p *PublishRelPacket) Length() int {
-	var l = 0
-
-	return 2 + l
+func (p *PubRelPacket) Length() int {
+	return 0
 }
 
-func (p *PublishRelPacket) Unpack(buf []byte) error {
+func (p *PubRelPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PublishRelPacket) Pack() ([]byte, error) {
+func (p *PubRelPacket) Pack() ([]byte, error) {
 	return nil, nil
 }
 
-func (p *PublishRelPacket) ToString() string {
-	return "publishrel: {}"
+func (p *PubRelPacket) ToString() string {
+	return "Message PubRel: {}"
 }

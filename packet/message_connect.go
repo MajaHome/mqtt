@@ -4,7 +4,8 @@ import (
 	"strconv"
 )
 
-type ConnectPacket struct {
+type ConnPacket struct {
+	Header       []byte
 	ClientID     string
 	KeepAlive    uint16
 	Username     string
@@ -14,16 +15,22 @@ type ConnectPacket struct {
 	Version      byte
 }
 
-func Connect() *ConnectPacket {
-	return &ConnectPacket{}
+func NewConnect() *ConnPacket {
+	return &ConnPacket{}
 }
 
-func (c *ConnectPacket) Type() Type{
+func CreateConnect(buf []byte) *ConnPacket {
+	return &ConnPacket{
+		Header: buf,
+	}
+}
+
+func (c *ConnPacket) Type() Type{
 	return CONNECT
 }
 
-func (c *ConnectPacket) Length() int {
-	var l int = 2/*packet type + size/ + 2 /*hdr len*/ + 6 /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
+func (c *ConnPacket) Length() int {
+	var l int = 2 /*hdr len*/ + 6 /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
 	if c.Will != nil {
 		l += 2 /*len*/ + len(c.Will.Topic) + 2 /*len*/ + len(c.Will.Payload)
 	}
@@ -32,20 +39,8 @@ func (c *ConnectPacket) Length() int {
 	return l
 }
 
-func (c *ConnectPacket) Unpack(buf []byte) error {
+func (c *ConnPacket) Unpack(buf []byte) error {
 	var offset int = 0
-
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	// packet len
-	_, offset, err = ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
 
 	hdrLen, offset, err := ReadInt16(buf, offset)
 	if err != nil {
@@ -168,13 +163,13 @@ func (c *ConnectPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (c *ConnectPacket) Pack() ([]byte, error) {
+func (c *ConnPacket) Pack() ([]byte, error) {
 	offset := 0
 	buf := make([]byte, c.Length())
 
 	offset = WriteInt8(buf, offset, byte(CONNECT) << 4)
 	offset = WriteInt8(buf, offset, byte(c.Length()))
-	offset = WriteInt16(buf, offset, 0x04)
+	offset = WriteInt16(buf, offset, 0x04)	// 4 version, MQTT
 
 	buf = append(buf, []byte("MQTT")...)
 	offset += 4
@@ -203,7 +198,7 @@ func (c *ConnectPacket) Pack() ([]byte, error) {
 	return buf, nil
 }
 
-func (c *ConnectPacket) ToString() string {
-	return "MessageConnect {ver="+strconv.Itoa(int(c.Version))+", keepalive="+
+func (c *ConnPacket) ToString() string {
+	return "Message Connect: {ver="+strconv.Itoa(int(c.Version))+", keepalive="+
 		strconv.Itoa(int(c.KeepAlive))+", clientId="+c.ClientID+", login="+c.Username+", password="+c.Password+"}"
 }

@@ -4,31 +4,36 @@ import (
 
 )
 
-type PublishRecPacket struct {
+type PubRecPacket struct {
+	Header []byte
 }
 
-func PublishRec() *PublishRecPacket {
-	return &PublishRecPacket{}
+func NewPubRec() *PubRecPacket {
+	return &PubRecPacket{}
 }
 
-func (p *PublishRecPacket) Type() Type {
+func CreatePubRec(buf []byte) *PubRecPacket {
+	return &PubRecPacket{
+		Header: buf,
+	}
+}
+
+func (p *PubRecPacket) Type() Type {
 	return PUBREC
 }
 
-func (p *PublishRecPacket) Length() int {
-	var l = 0
-
-	return 2 + l
+func (p *PubRecPacket) Length() int {
+	return 0
 }
 
-func (p *PublishRecPacket) Unpack(buf []byte) error {
+func (p *PubRecPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PublishRecPacket) Pack() ([]byte, error) {
+func (p *PubRecPacket) Pack() ([]byte, error) {
 	return nil, nil
 }
 
-func (p *PublishRecPacket) ToString() string {
-	return "publishrec: {}"
+func (p *PubRecPacket) ToString() string {
+	return "Message PubRec: {}"
 }

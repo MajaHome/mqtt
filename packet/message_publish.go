@@ -5,6 +5,7 @@ import (
 )
 
 type PublishPacket struct {
+	Header []byte
 	Id uint16
 	QoS       QoS
 	Retain    bool
@@ -13,8 +14,14 @@ type PublishPacket struct {
 	Payload string
 }
 
-func Publish() *PublishPacket {
+func NewPublish() *PublishPacket {
 	return &PublishPacket{}
+}
+
+func CreatePublish(buf []byte) *PublishPacket {
+	return &PublishPacket{
+		Header: buf,
+	}
 }
 
 func (p *PublishPacket) Type() Type {
@@ -30,19 +37,13 @@ func (p *PublishPacket) Length() int {
 }
 
 func (p *PublishPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
 	// packet type
-	packetType, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
+	packetType := p.Header[0]
 
 	// packet len
-	packetLen, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
+	packetLen := p.Header[1]
+
+	var offset int = 0
 
 	p.DUP = packetType >> 3 & 0x1 == 1
 	p.Retain = packetType & 0x1 == 1
@@ -65,7 +66,7 @@ func (p *PublishPacket) Unpack(buf []byte) error {
 		}
 	}
 
-	p.Payload, offset, err = ReadString(buf, offset, int(int(packetLen) - offset + 2/*packet type+len*/))
+	p.Payload, offset, err = ReadString(buf, offset, int(int(packetLen) - offset))
 	if err != nil {
 		return err
 	}
@@ -112,7 +113,7 @@ func (p *PublishPacket) Pack() ([]byte, error) {
 }
 
 func (p *PublishPacket) ToString() string {
-	return "MessagePublish: {id=" + strconv.Itoa(int(p.Id)) + ", topic=" + p.Topic + ", payload=" +
+	return "Message Publish: {id=" + strconv.Itoa(int(p.Id)) + ", topic=" + p.Topic + ", payload=" +
 		p.Payload + ", qos=" + p.QoS.ToString() + ", retain=" + strconv.FormatBool(p.Retain) +
 		", dup=" + strconv.FormatBool(p.DUP) + "}"
 }

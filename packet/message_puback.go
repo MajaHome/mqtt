@@ -4,46 +4,40 @@ import (
 	"strconv"
 )
 
-type PublishAckPacket struct {
+type PubAckPacket struct {
+	Header []byte
 	Id uint16
 }
 
-func PublishAck() *PublishAckPacket {
-	return &PublishAckPacket{}
+func NewPubAck() *PubAckPacket {
+	return &PubAckPacket{}
 }
 
-func (pack *PublishAckPacket) Type() Type {
+func CreatePubAck(buf []byte) *PubAckPacket {
+	return &PubAckPacket{
+		Header: buf,
+	}
+}
+
+func (pack *PubAckPacket) Type() Type {
 	return PUBACK
 }
 
-func (pack *PublishAckPacket) Length() int {
-	return 2 + 2
+func (pack *PubAckPacket) Length() int {
+	return 2
 }
 
-func (pack *PublishAckPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
+func (pack *PubAckPacket) Unpack(buf []byte) error {
+	id, _, err := ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
-
-	// packet len
-	_, offset, err = ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	pack.Id, offset, err = ReadInt16(buf, offset)
-	if err != nil {
-		return err
-	}
+	pack.Id =id
 
 	return nil
 }
 
-func (pack *PublishAckPacket) Pack() ([]byte, error) {
+func (pack *PubAckPacket) Pack() ([]byte, error) {
 	offset := 0
 	buf := make([]byte, 4)
 
@@ -54,6 +48,6 @@ func (pack *PublishAckPacket) Pack() ([]byte, error) {
 	return buf, nil
 }
 
-func (pack *PublishAckPacket) ToString() string {
+func (pack *PubAckPacket) ToString() string {
 	return "Message PubAck: { id=" + strconv.Itoa(int(pack.Id)) + "}"
 }

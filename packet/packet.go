@@ -3,6 +3,7 @@ package packet
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 var ErrInvalidPacketType = errors.New("invalid packet type")
@@ -53,31 +54,31 @@ func Types() []Type {
 func (t Type) ToString() string {
 	switch t {
 	case CONNECT:
-		return "Connect"
+		return "CreateConnect"
 	case CONNACK:
-		return "ConnectAck"
+		return "CreateConnAck"
 	case PUBLISH:
-		return "Publish"
+		return "CreatePublish"
 	case PUBACK:
-		return "PublishAck"
+		return "CreatePubAck"
 	case PUBREC:
-		return "PublishRec"
+		return "CreatePubRec"
 	case PUBREL:
-		return "PublishRel"
+		return "CreatePubRel"
 	case PUBCOMP:
-		return "PublishComp"
+		return "CreatePubComp"
 	case SUBSCRIBE:
-		return "Subscribe"
+		return "CreateSubscribe"
 	case SUBACK:
-		return "SubscribeAck"
+		return "CreateSubAck"
 	case UNSUBSCRIBE:
 		return "Unsubscribe"
 	case UNSUBACK:
 		return "UnsubscribeAck"
 	case PING:
-		return "Ping"
+		return "CreatePing"
 	case PONG:
-		return "Pong"
+		return "CreatePong"
 	case DISCONNECT:
 		return "Flag"
 	}
@@ -85,39 +86,43 @@ func (t Type) ToString() string {
 	return "Unknown"
 }
 
-func (t Type) Create() (Packet, error) {
+func Create(buf []byte) (Packet, uint8, error) {
+	t := Type(buf[0] >> 4)
+	len := buf[1]
+	fmt.Println("packet type", t)
+
 	switch t {
 	case CONNECT:
-		return Connect(), nil
+		return CreateConnect(buf), len, nil
 	case CONNACK:
-		return ConnectAck(), nil
+		return CreateConnAck(buf), len, nil
 	case PUBLISH:
-		return Publish(), nil
+		return CreatePublish(buf), len, nil
 	case PUBACK:
-		return PublishAck(), nil
+		return CreatePubAck(buf), len, nil
 	case PUBREC:
-		return PublishRec(), nil
+		return CreatePubRec(buf), len, nil
 	case PUBREL:
-		return PublishRel(), nil
+		return CreatePubRel(buf), len, nil
 	case PUBCOMP:
-		return PublishComp(), nil
+		return CreatePubComp(buf), len, nil
 	case SUBSCRIBE:
-		return Subscribe(), nil
+		return CreateSubscribe(buf), len, nil
 	case SUBACK:
-		return SubscribeAck(), nil
+		return CreateSubAck(buf), len, nil
 	case UNSUBSCRIBE:
-		return UnSubscribe(), nil
+		return CreateUnSubscribe(buf), len, nil
 	case UNSUBACK:
-		return UnSubscribeAck(), nil
+		return CreateUnSubAck(buf), len, nil
 	case PING:
-		return Ping(), nil
+		return CreatePing(buf), len, nil
 	case PONG:
-		return Pong(), nil
+		return CreatePong(buf), len, nil
 	case DISCONNECT:
-		return Disconnect(), nil
+		return CreateDisconnect(buf), len, nil
 	}
 
-	return nil, ErrInvalidPacketType
+	return nil, 0, ErrInvalidPacketType
 }
 
 func ReadInt8(buf []byte, offset int) (uint8, int, error) {

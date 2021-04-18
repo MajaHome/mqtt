@@ -15,12 +15,19 @@ func (p *SubscribePayload) ToString() string {
 }
 
 type SubscribePacket struct {
+	Header []byte
 	Id uint16
 	Topics []SubscribePayload
 }
 
-func Subscribe() *SubscribePacket {
+func NewSubscribe() *SubscribePacket {
 	return &SubscribePacket{}
+}
+
+func CreateSubscribe(buf []byte) *SubscribePacket {
+	return &SubscribePacket{
+		Header: buf,
+	}
 }
 
 func (s *SubscribePacket) Type() Type {
@@ -34,25 +41,14 @@ func (s *SubscribePacket) Length() int {
 func (s *SubscribePacket) Unpack(buf []byte) error {
 	var offset int = 0
 
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
+	id, offset, err := ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
-
-	// packet len
-	bufLen, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	s.Id, offset, err = ReadInt16(buf, offset)
-	if err != nil {
-		return err
-	}
+	s.Id = id
 
 	var read uint8 = 2
-	for bufLen > read {
+	for s.Header[1] > read {
 		topicLen, offset, err := ReadInt16(buf, offset)
 		if err != nil {
 			return err
@@ -82,7 +78,7 @@ func (s *SubscribePacket) Pack() ([]byte, error) {
 func (s *SubscribePacket) ToString() string {
 	var sb strings.Builder
 
-	sb.WriteString("MessageSubscribe: {id:")
+	sb.WriteString("Message Subscribe: {id:")
 	sb.WriteString(strconv.Itoa(int(s.Id)))
 	for _, t := range s.Topics {
 		sb.WriteString(", payload: ")

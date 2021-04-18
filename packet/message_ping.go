@@ -1,9 +1,16 @@
 package packet
 
-type PingPacket struct {}
+type PingPacket struct {
+	Header []byte
+}
 
-func Ping() *PingPacket {
+func NewPing() *PingPacket {
 	return &PingPacket{}
+}
+func CreatePing(buf []byte) *PingPacket {
+	return &PingPacket{
+		Header: buf,
+	}
 }
 
 func (p *PingPacket) Type() Type {
@@ -15,20 +22,6 @@ func (p *PingPacket) Length() int {
 }
 
 func (p *PingPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	// packet len
-	_, offset, err = ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -42,5 +35,5 @@ func (p *PingPacket) Pack() ([]byte, error) {
 }
 
 func (p *PingPacket) ToString() string {
-	return "ping: {}"
+	return "Message Ping: {}"
 }

@@ -1,9 +1,16 @@
 package packet
 
-type DisconnectPacket struct {}
+type DisconnectPacket struct {
+	Header []byte
+}
 
-func Disconnect() *DisconnectPacket {
+func NewDisconnect() *DisconnectPacket {
 	return &DisconnectPacket{}
+}
+func CreateDisconnect(buf []byte) *DisconnectPacket {
+	return &DisconnectPacket{
+		Header: buf,
+	}
 }
 
 func (cack *DisconnectPacket) Type() Type {
@@ -28,5 +35,5 @@ func (cack *DisconnectPacket) Pack() ([]byte, error) {
 }
 
 func (cack *DisconnectPacket) ToString() string {
-	return "disconnect: {}"
+	return "Message Disconnect: {}"
 }

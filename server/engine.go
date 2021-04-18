@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -55,30 +54,25 @@ func (e Engine) Close() {
 }
 
 func (e Engine) Serve(conn net.Conn) error {
-	recvBuf1 := make([]byte, 2)
-	n, err := conn.Read(recvBuf1)
+	fHeader := make([]byte, 2)
+	n, err := conn.Read(fHeader)
 	if n < 2 || err != nil {
 		return io.ErrUnexpectedEOF
 	}
 
-	fmt.Println("packet type", recvBuf1[0] >> 4)
+	fmt.Println(hex.Dump(fHeader))
 
-	//packetType := packet.Type(recvBuf1[0] >> 4)
-	pkt, _ := packet.Create(recvBuf1[0] >> 4)
+	pkt, packetLength, err := packet.Create(fHeader)
 
-	packetLength, _ := binary.Uvarint(recvBuf1[1:])
 	if packetLength != 0 {
-		recvBuf2 := make([]byte, packetLength+2)
-		copy(recvBuf2, recvBuf1)
-		n, err = conn.Read(recvBuf2[2:])
+		vHeader := make([]byte, packetLength)
+		n, err = conn.Read(vHeader)
 		if n < int(packetLength) || err != nil {
 			return io.ErrUnexpectedEOF
 		}
 
-		fmt.Println(hex.Dump(recvBuf2))
-		pkt.Unpack(recvBuf2)
-	} else {
-		fmt.Println(hex.Dump(recvBuf1))
+		fmt.Println(hex.Dump(vHeader))
+		pkt.Unpack(vHeader)
 	}
 
 	fmt.Println("packet", pkt.ToString())
@@ -86,32 +80,23 @@ func (e Engine) Serve(conn net.Conn) error {
 	var res packet.Packet
 	switch pkt.Type() {
 	case packet.CONNECT:
-		res = packet.ConnectAck()
-		/*
-		If the Server accepts a connection with CleanSession set to 1, the Server MUST set Session Present to 0
-		in the CONNACK packet in addition to setting a zero return code in the CONNACK packet [MQTT-3.2.2-1].
-		If the Server accepts a connection with CleanSession set to 0, the value set in Session Present depends
-		on whether the Server already has stored Session state for the supplied client ID. If the Server has
-		stored Session state, it MUST set Session Present to 1 in the CONNACK packet [MQTT-3.2.2-2]. If the
-		Server does not have stored Session state, it MUST set Session Present to 0 in the CONNACK packet.
-		This is in addition to setting a zero return code in the CONNACK packet [MQTT-3.2.2-3].
-		*/
-		res.(*packet.ConnectAckPacket).Session = !pkt.(*packet.ConnectPacket).CleanSession
-		res.(*packet.ConnectAckPacket).ReturnCode = uint8(packet.ConnectAccepted)
+		res = packet.NewConnAck()
+		res.(*packet.ConnAckPacket).Session = !pkt.(*packet.ConnPacket).CleanSession
+		res.(*packet.ConnAckPacket).ReturnCode = uint8(packet.ConnectAccepted)
 	case packet.DISCONNECT:
 		return io.EOF
 	case packet.SUBSCRIBE:
-		res = packet.SubscribeAck()
+		res = packet.NewSubAck()
 
 		// send SUBACK
-		res.(*packet.SubscribeAckPacket).Id = pkt.(*packet.SubscribePacket).Id
+		res.(*packet.SubAckPacket).Id = pkt.(*packet.SubscribePacket).Id
 		var qos []packet.QoS
 		for _, q := range pkt.(*packet.SubscribePacket).Topics {
 			qos = append(qos, q.QoS)
 		}
-		res.(*packet.SubscribeAckPacket).ReturnCodes = qos
+		res.(*packet.SubAckPacket).ReturnCodes = qos
 	case packet.UNSUBSCRIBE:
-		res = packet.UnSubscribeAck()
+		res = packet.NewUnSubAck()
 	case packet.PUBLISH:
 		res = pkt
 	case packet.PUBACK:
@@ -121,9 +106,9 @@ func (e Engine) Serve(conn net.Conn) error {
 	case packet.PUBREC:
 		;
 	case packet.PUBREL:
-		r;
+		;
 	case packet.PING:
-		res = packet.Pong()
+		res = packet.NewPong()
 	default:
 		return packet.ErrUnknownPacket
 	}

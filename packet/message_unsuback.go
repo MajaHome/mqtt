@@ -4,31 +4,36 @@ import (
 
 )
 
-type UnSubscribeAckPacket struct {
+type UnSubAckPacket struct {
+	Header []byte
 }
 
-func UnSubscribeAck() *UnSubscribeAckPacket {
-	return &UnSubscribeAckPacket{}
+func NewUnSubAck() *UnSubAckPacket {
+	return &UnSubAckPacket{}
 }
 
-func (uack *UnSubscribeAckPacket) Type() Type {
+func CreateUnSubAck(buf []byte) *UnSubAckPacket {
+	return &UnSubAckPacket{
+		Header: buf,
+	}
+}
+
+func (uack *UnSubAckPacket) Type() Type {
 	return UNSUBACK
 }
 
-func (uack *UnSubscribeAckPacket) Length() int {
-	var l = 0
-
-	return 2 + l
+func (uack *UnSubAckPacket) Length() int {
+	return 2
 }
 
-func (uack *UnSubscribeAckPacket) Unpack(buf []byte) error {
+func (uack *UnSubAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (uack *UnSubscribeAckPacket) Pack() ([]byte, error) {
+func (uack *UnSubAckPacket) Pack() ([]byte, error) {
 	return nil, nil
 }
 
-func (uack *UnSubscribeAckPacket) ToString() string {
-	return "unsubscribeack: {}"
+func (uack *UnSubAckPacket) ToString() string {
+	return "Message UnSubAck: {}"
 }

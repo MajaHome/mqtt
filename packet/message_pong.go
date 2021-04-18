@@ -1,9 +1,17 @@
 package packet
 
-type PongPacket struct {}
+type PongPacket struct {
+	Header []byte
+}
 
-func Pong() *PongPacket {
+func NewPong() *PongPacket {
 	return &PongPacket{}
+}
+
+func CreatePong(buf []byte) *PongPacket {
+	return &PongPacket{
+		Header: buf,
+	}
 }
 
 func (p *PongPacket) Type() Type {
@@ -15,20 +23,6 @@ func (p *PongPacket) Length() int {
 }
 
 func (p *PongPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	// packet type
-	_, offset, err := ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
-	// packet len
-	_, offset, err = ReadInt8(buf, offset)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -42,5 +36,5 @@ func (p *PongPacket) Pack() ([]byte, error) {
 }
 
 func (p *PongPacket) ToString() string {
-	return "pong: {}"
+	return "Message Pong: {}"
 }
