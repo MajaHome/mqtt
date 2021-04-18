@@ -22,7 +22,11 @@ func (p *PublishPacket) Type() Type {
 }
 
 func (p *PublishPacket) Length() int {
-	return 2 + 2/*topic len*/ + len(p.Topic) + len(p.Payload)
+	var l = 2/*topic len*/ + len(p.Topic) + len(p.Payload)
+	if p.QoS > 0 {
+		l += 2
+	}
+	return l
 }
 
 func (p *PublishPacket) Unpack(buf []byte) error {
@@ -61,7 +65,7 @@ func (p *PublishPacket) Unpack(buf []byte) error {
 		}
 	}
 
-	p.Payload, offset, err = ReadString(buf, offset, int(int(packetLen) - offset))
+	p.Payload, offset, err = ReadString(buf, offset, int(int(packetLen) - offset + 2/*packet type+len*/))
 	if err != nil {
 		return err
 	}
@@ -96,6 +100,12 @@ func (p *PublishPacket) Pack() ([]byte, error) {
 	offset = WriteInt8(buf, offset, byte(p.Length()))
 	offset = WriteInt16(buf, offset, uint16(len(p.Topic)))
 	buf = append(buf, p.Topic...)
+	offset += len(p.Topic)
+	if p.QoS > 0 {
+		tmp := make([]byte, 2)
+		_ = WriteInt16(tmp, 0, p.Id)
+		buf = append(buf, tmp...)
+	}
 	buf = append(buf, p.Payload...)
 
 	return buf, nil

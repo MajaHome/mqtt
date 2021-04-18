@@ -61,8 +61,10 @@ func (e Engine) Serve(conn net.Conn) error {
 		return io.ErrUnexpectedEOF
 	}
 
-	packetType := packet.Type(recvBuf1[0] >> 4)
-	pkt, _ := packetType.Create()
+	fmt.Println("packet type", recvBuf1[0] >> 4)
+
+	//packetType := packet.Type(recvBuf1[0] >> 4)
+	pkt, _ := packet.Create(recvBuf1[0] >> 4)
 
 	packetLength, _ := binary.Uvarint(recvBuf1[1:])
 	if packetLength != 0 {
@@ -111,13 +113,15 @@ func (e Engine) Serve(conn net.Conn) error {
 	case packet.UNSUBSCRIBE:
 		res = packet.UnSubscribeAck()
 	case packet.PUBLISH:
-		res = packet.PublishAck()
+		res = pkt
+	case packet.PUBACK:
+		res = pkt
 	case packet.PUBCOMP:
-		res = packet.PublishAck()
+		;
 	case packet.PUBREC:
-		res = packet.PublishAck()
+		;
 	case packet.PUBREL:
-		res = packet.PublishAck()
+		r;
 	case packet.PING:
 		res = packet.Pong()
 	default:

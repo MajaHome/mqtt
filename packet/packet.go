@@ -165,7 +165,7 @@ func WriteInt8(buf []byte, offset int, value uint8) int {
 }
 
 func WriteInt16(buf []byte, offset int, value uint16) int {
-	binary.BigEndian.PutUint16(buf[offset:], 0x04)
+	binary.BigEndian.PutUint16(buf[offset:], value)
 	offset += 2
 	return offset
 }
