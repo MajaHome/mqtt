@@ -30,8 +30,8 @@ func (p *PubCompPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PubCompPacket) Pack() ([]byte, error) {
-	return nil, nil
+func (p *PubCompPacket) Pack() []byte {
+	return nil
 }
 
 func (p *PubCompPacket) ToString() string {

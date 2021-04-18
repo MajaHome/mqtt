@@ -37,7 +37,7 @@ func (pack *PubAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (pack *PubAckPacket) Pack() ([]byte, error) {
+func (pack *PubAckPacket) Pack() []byte {
 	offset := 0
 	buf := make([]byte, 4)
 
@@ -45,7 +45,7 @@ func (pack *PubAckPacket) Pack() ([]byte, error) {
 	offset = WriteInt8(buf, offset, byte(pack.Length()))
 	offset = WriteInt16(buf, offset, pack.Id)
 
-	return buf, nil
+	return buf
 }
 
 func (pack *PubAckPacket) ToString() string {

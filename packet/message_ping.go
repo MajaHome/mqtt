@@ -25,13 +25,13 @@ func (p *PingPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PingPacket) Pack() ([]byte, error) {
+func (p *PingPacket) Pack() []byte {
 	buf := make([]byte, 2)
 
 	buf[0] = byte(PING) << 4
 	buf[1] = byte(p.Length()) // Size
 
-	return buf, nil
+	return buf
 }
 
 func (p *PingPacket) ToString() string {

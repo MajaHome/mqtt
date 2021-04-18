@@ -30,8 +30,8 @@ func (p *PubRelPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PubRelPacket) Pack() ([]byte, error) {
-	return nil, nil
+func (p *PubRelPacket) Pack() []byte {
+	return nil
 }
 
 func (p *PubRelPacket) ToString() string {

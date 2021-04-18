@@ -57,7 +57,7 @@ func (cack *ConnAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (cack *ConnAckPacket) Pack() ([]byte, error) {
+func (cack *ConnAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(CONNACK) << 4
@@ -69,7 +69,7 @@ func (cack *ConnAckPacket) Pack() ([]byte, error) {
 	}
 	buf[3] = cack.ReturnCode
 
-	return buf, nil
+	return buf
 }
 
 func (cack *ConnAckPacket) ToString() string {

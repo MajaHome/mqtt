@@ -60,6 +60,7 @@ func (e Engine) Serve(conn net.Conn) error {
 		return io.ErrUnexpectedEOF
 	}
 
+	fmt.Println("request")
 	fmt.Println(hex.Dump(fHeader))
 
 	pkt, packetLength, err := packet.Create(fHeader)
@@ -75,7 +76,7 @@ func (e Engine) Serve(conn net.Conn) error {
 		pkt.Unpack(vHeader)
 	}
 
-	fmt.Println("packet", pkt.ToString())
+	fmt.Println("packet", pkt.ToString(), "\n")
 
 	var res packet.Packet
 	switch pkt.Type() {
@@ -99,6 +100,8 @@ func (e Engine) Serve(conn net.Conn) error {
 		res = packet.NewUnSubAck()
 	case packet.PUBLISH:
 		res = pkt
+		
+		// if payload is empty - unsubscribe to the topic
 	case packet.PUBACK:
 		res = pkt
 	case packet.PUBCOMP:
@@ -113,11 +116,11 @@ func (e Engine) Serve(conn net.Conn) error {
 		return packet.ErrUnknownPacket
 	}
 
-	r, err := res.Pack()
-	if err != nil {
-		return err
-	}
-	fmt.Println("response", hex.Dump(r))
+	r := res.Pack()
+
+	fmt.Println("response")
+	fmt.Println(hex.Dump(r))
+
 	n, err = conn.Write(r)
 	if err != nil {
 		fmt.Println("err write")

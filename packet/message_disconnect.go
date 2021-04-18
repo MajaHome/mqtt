@@ -25,13 +25,13 @@ func (cack *DisconnectPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (cack *DisconnectPacket) Pack() ([]byte, error) {
+func (cack *DisconnectPacket) Pack() []byte {
 	buf := make([]byte, 2)
 
 	buf[0] = byte(DISCONNECT) << 4
 	buf[1] = byte(cack.Length()) // Size
 
-	return buf, nil
+	return buf
 }
 
 func (cack *DisconnectPacket) ToString() string {

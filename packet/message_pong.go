@@ -26,13 +26,13 @@ func (p *PongPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PongPacket) Pack() ([]byte, error) {
+func (p *PongPacket) Pack() []byte {
 	buf := make([]byte, 2)
 
 	buf[0] = byte(PONG) << 4
 	buf[1] = byte(p.Length())	// Size
 
-	return buf, nil
+	return buf
 }
 
 func (p *PongPacket) ToString() string {

@@ -1,9 +1,8 @@
 package packet
 
 import (
-	"encoding/binary"
 	"errors"
-	"fmt"
+	"encoding/binary"
 )
 
 var ErrInvalidPacketType = errors.New("invalid packet type")
@@ -37,7 +36,7 @@ type Packet interface {
 	Type() Type
 	Length() int
 	Unpack(buf []byte) error
-	Pack() ([]byte, error)
+	Pack() []byte
 	ToString() string
 }
 
@@ -89,7 +88,6 @@ func (t Type) ToString() string {
 func Create(buf []byte) (Packet, uint8, error) {
 	t := Type(buf[0] >> 4)
 	len := buf[1]
-	fmt.Println("packet type", t)
 
 	switch t {
 	case CONNECT:

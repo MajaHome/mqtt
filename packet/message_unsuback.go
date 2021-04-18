@@ -30,8 +30,8 @@ func (uack *UnSubAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (uack *UnSubAckPacket) Pack() ([]byte, error) {
-	return nil, nil
+func (uack *UnSubAckPacket) Pack() []byte {
+	return nil
 }
 
 func (uack *UnSubAckPacket) ToString() string {

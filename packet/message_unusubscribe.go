@@ -30,8 +30,8 @@ func (u *UnSubscriibePacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (u *UnSubscriibePacket) Pack() ([]byte, error) {
-	return nil, nil
+func (u *UnSubscriibePacket) Pack() []byte {
+	return nil
 }
 
 func (u *UnSubscriibePacket) ToString() string {

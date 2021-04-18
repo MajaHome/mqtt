@@ -10,6 +10,22 @@ type SubscribePayload struct {
 	Topic string
 }
 
+func (p *SubscribePayload) Length() int {
+	return len(p.Topic) + 1/*qos*/ + 2/*len*/
+}
+
+func (p *SubscribePayload) Pack() []byte {
+	var offset int = 0
+	buf := make([]byte, p.Length() + 2)
+
+	offset = WriteInt16(buf, offset, uint16(p.Length()))
+	copy(buf[offset:], p.Topic)
+	offset += len(p.Topic)
+	offset = WriteInt8(buf, offset, uint8(p.QoS))
+
+	return buf
+}
+
 func (p *SubscribePayload) ToString() string {
 	return "{topic:" + p.Topic + ", qos=" + p.QoS.ToString() + "}"
 }
@@ -35,7 +51,11 @@ func (s *SubscribePacket) Type() Type {
 }
 
 func (s *SubscribePacket) Length() int {
-	return 2 + 1 + len(s.Topics)
+	var l int = 0
+	for _, p := range s.Topics {
+		l += p.Length()
+	}
+	return 2 + 2 + len(s.Topics) + l
 }
 
 func (s *SubscribePacket) Unpack(buf []byte) error {
@@ -69,10 +89,18 @@ func (s *SubscribePacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (s *SubscribePacket) Pack() ([]byte, error) {
-	// todo
+func (s *SubscribePacket) Pack() []byte {
+	var offset int = 0
+	buf := make([]byte, 4)
+	offset = WriteInt8(buf, offset, byte(SUBSCRIBE) << 4)
+	offset = WriteInt8(buf, offset, byte(s.Length()))
+	offset = WriteInt16(buf, offset, s.Id)
 
-	return nil, nil
+	for _, t := range s.Topics {
+		buf = append(buf, t.Pack()...)
+	}
+
+	return buf
 }
 
 func (s *SubscribePacket) ToString() string {

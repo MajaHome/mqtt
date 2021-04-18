@@ -32,7 +32,7 @@ func (c *ConnPacket) Type() Type{
 func (c *ConnPacket) Length() int {
 	var l int = 2 /*hdr len*/ + 6 /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
 	if c.Will != nil {
-		l += 2 /*len*/ + len(c.Will.Topic) + 2 /*len*/ + len(c.Will.Payload)
+		l += c.Will.Length()
 	}
 	l += 2 /*len*/ + len(c.Username) + 2/*len*/ + len(c.Password)
 
@@ -163,7 +163,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (c *ConnPacket) Pack() ([]byte, error) {
+func (c *ConnPacket) Pack() []byte {
 	offset := 0
 	buf := make([]byte, c.Length())
 
@@ -176,26 +176,46 @@ func (c *ConnPacket) Pack() ([]byte, error) {
 	offset = WriteInt8(buf, offset, byte(0x04))
 
 	var flag uint8 = 0x0
-	//
+	if len(c.Username) > 0 {
+		flag |= 128 // 1000 0000
+	}
+
+	if len(c.Password) > 0 {
+		flag |= 64 // 0100 0000
+	}
+
+	if c.Will != nil {
+		flag |= 0x4 // 00000100
+
+		if c.Will.Retain {
+			flag |= 32 // 00100000
+		}
+
+		flag = (flag & 231) | (byte(c.Will.QoS) << 3) // 231 = 11100111
+	}
+
+	if c.CleanSession {
+		flag |= 0x2 // 00000010
+	}
 	offset = WriteInt8(buf, offset, flag)
 
-	// keepalive uint16
-	// clid len uint16
-	// cl string
+	offset = WriteInt16(buf, offset, c.KeepAlive)
+	offset = WriteInt16(buf, offset, uint16(len(c.ClientID)))
+	copy(buf[offset:], c.ClientID)
 
-	// if will
-	// topicLen uint16
-	// topic string
-	// payloadlen uint16
-	// payload []byte
+	if c.Will != nil {
+		copy(buf[offset:], c.Will.Pack())
+		offset += c.Will.Length()
+	}
 
-	// loginLen uint16
-	// login string
+	offset = WriteInt16(buf, offset, uint16(len(c.Username)))
+	copy(buf[offset:], c.Username)
+	offset += len(c.Username)
 
-	// passLen uint16
-	// pass string
+	offset = WriteInt16(buf, offset, uint16(len(c.Password)))
+	copy(buf[offset:], c.Password)
 
-	return buf, nil
+	return buf
 }
 
 func (c *ConnPacket) ToString() string {

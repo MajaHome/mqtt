@@ -74,7 +74,7 @@ func (p *PublishPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (p *PublishPacket) Pack() ([]byte, error) {
+func (p *PublishPacket) Pack() []byte {
 	offset := 0
 	buf := make([]byte, 4)
 
@@ -87,9 +87,7 @@ func (p *PublishPacket) Pack() ([]byte, error) {
 		packType |= 0x8
 	}
 
-	if !p.QoS.Valid() {
-		return nil, ErrInvalidQos
-	}
+	// do not check QoS is valid
 	if p.QoS == QoS(1) {
 		packType |= 0x2
 	}
@@ -109,7 +107,7 @@ func (p *PublishPacket) Pack() ([]byte, error) {
 	}
 	buf = append(buf, p.Payload...)
 
-	return buf, nil
+	return buf
 }
 
 func (p *PublishPacket) ToString() string {

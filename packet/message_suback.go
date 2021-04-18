@@ -49,7 +49,7 @@ func (sack *SubAckPacket) Unpack(buf []byte) error {
 	return nil
 }
 
-func (sack *SubAckPacket) Pack() ([]byte, error) {
+func (sack *SubAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(SUBACK) << 4
@@ -60,7 +60,7 @@ func (sack *SubAckPacket) Pack() ([]byte, error) {
 		buf = append(buf, byte(rc))
 	}
 
-	return buf, nil
+	return buf
 }
 
 func (sack *SubAckPacket) ToString() string {
