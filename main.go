@@ -2,52 +2,36 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"os"
-	"syscall"
-	"os/signal"
+	"log"
 	"mqtt/server"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 var (
-	cert = flag.String("cert", "server.crt", "path to server certificate")
-	key = flag.String("key", "server.key", "path to server private key")
+	debug = flag.Bool("debug", false, "show debug info")
+	cert  = flag.String("cert", "server.crt", "path to server certificate")
+	key   = flag.String("key", "server.key", "path to server private key")
 )
 
 func main() {
 	flag.Parse()
-	fmt.Println("Starting broker ...")
+	log.Println("Starting broker ...")
 
 	// init
-	backend := server.GetBackend()
+	backend := server.GetBackend(*debug)
 	engine := server.GetEngine(backend)
 
 	mqtt, err := server.Run()
 	if err != nil {
-		panic(err)
+		log.Panic("error running server", err)
 	}
 	go engine.Manage(mqtt)
-
-	//var mqtts server.Server
-	//if cert != nil && key != nil {
-	//	c, err := tls.LoadX509KeyPair(*cert, *key)
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//
-	//	tls := &tls.Config{Certificates: []tls.Certificate{c}}
-	//	mqtts, err = server.RunSecured(tls)
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//
-	//	go engine.Accept(mqtts)
-	//}
 
 	finish := make(chan os.Signal, 1)
 	signal.Notify(finish, syscall.SIGINT, syscall.SIGTERM)
 	<-finish
 
-	// shutdown
-	//engine.Close()
+	engine.Close()
 }

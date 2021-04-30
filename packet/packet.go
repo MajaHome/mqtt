@@ -52,75 +52,74 @@ func Types() []Type {
 // String returns the type as a string.
 func (t Type) ToString() string {
 	switch t {
-	case CONNECT:
-		return "CreateConnect"
-	case CONNACK:
-		return "CreateConnAck"
-	case PUBLISH:
-		return "CreatePublish"
-	case PUBACK:
-		return "CreatePubAck"
-	case PUBREC:
-		return "CreatePubRec"
-	case PUBREL:
-		return "CreatePubRel"
-	case PUBCOMP:
-		return "CreatePubComp"
-	case SUBSCRIBE:
-		return "CreateSubscribe"
-	case SUBACK:
-		return "CreateSubAck"
-	case UNSUBSCRIBE:
-		return "Unsubscribe"
-	case UNSUBACK:
-		return "UnsubscribeAck"
-	case PING:
-		return "CreatePing"
-	case PONG:
-		return "CreatePong"
-	case DISCONNECT:
-		return "Flag"
+		case CONNECT:
+			return "CreateConnect"
+		case CONNACK:
+			return "CreateConnAck"
+		case PUBLISH:
+			return "CreatePublish"
+		case PUBACK:
+			return "CreatePubAck"
+		case PUBREC:
+			return "CreatePubRec"
+		case PUBREL:
+			return "CreatePubRel"
+		case PUBCOMP:
+			return "CreatePubComp"
+		case SUBSCRIBE:
+			return "CreateSubscribe"
+		case SUBACK:
+			return "CreateSubAck"
+		case UNSUBSCRIBE:
+			return "Unsubscribe"
+		case UNSUBACK:
+			return "UnsubscribeAck"
+		case PING:
+			return "CreatePing"
+		case PONG:
+			return "CreatePong"
+		case DISCONNECT:
+			return "Flag"
 	}
 
 	return "Unknown"
 }
 
-func Create(buf []byte) (Packet, uint8, error) {
+func Create(buf []byte) (Packet, error) {
 	t := Type(buf[0] >> 4)
-	len := buf[1]
 
 	switch t {
-	case CONNECT:
-		return CreateConnect(buf), len, nil
-	case CONNACK:
-		return CreateConnAck(buf), len, nil
-	case PUBLISH:
-		return CreatePublish(buf), len, nil
-	case PUBACK:
-		return CreatePubAck(buf), len, nil
-	case PUBREC:
-		return CreatePubRec(buf), len, nil
-	case PUBREL:
-		return CreatePubRel(buf), len, nil
-	case PUBCOMP:
-		return CreatePubComp(buf), len, nil
-	case SUBSCRIBE:
-		return CreateSubscribe(buf), len, nil
-	case SUBACK:
-		return CreateSubAck(buf), len, nil
-	case UNSUBSCRIBE:
-		return CreateUnSubscribe(buf), len, nil
-	case UNSUBACK:
-		return CreateUnSubAck(buf), len, nil
-	case PING:
-		return CreatePing(buf), len, nil
-	case PONG:
-		return CreatePong(buf), len, nil
-	case DISCONNECT:
-		return CreateDisconnect(buf), len, nil
+		case CONNECT:
+			return CreateConnect(buf), nil
+		case CONNACK:
+			return CreateConnAck(buf), nil
+		case PUBLISH:
+			return CreatePublish(buf), nil
+		case PUBACK:
+			return CreatePubAck(buf), nil
+		case PUBREC:
+			return CreatePubRec(buf), nil
+		case PUBREL:
+			return CreatePubRel(buf), nil
+		case PUBCOMP:
+			return CreatePubComp(buf), nil
+		case SUBSCRIBE:
+			return CreateSubscribe(buf), nil
+		case SUBACK:
+			return CreateSubAck(buf), nil
+		case UNSUBSCRIBE:
+			return CreateUnSubscribe(buf), nil
+		case UNSUBACK:
+			return CreateUnSubAck(buf), nil
+		case PING:
+			return CreatePing(buf), nil
+		case PONG:
+			return CreatePong(buf), nil
+		case DISCONNECT:
+			return CreateDisconnect(buf), nil
 	}
 
-	return nil, 0, ErrInvalidPacketType
+	return nil, ErrInvalidPacketType
 }
 
 func ReadInt8(buf []byte, offset int) (uint8, int, error) {

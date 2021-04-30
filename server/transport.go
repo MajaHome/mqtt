@@ -1,19 +1,16 @@
 package server
 
 import (
-	"crypto/tls"
-	"fmt"
+	"encoding/hex"
+	"io"
+	"log"
+	"mqtt/packet"
 	"net"
 )
 
 type Server struct {
-	listener net.Listener
-}
-
-func NewMqtt(l net.Listener) *Server {
-	return &Server{
-		listener: l,
-	}
+	listener    net.Listener
+	connections int
 }
 
 func Run() (*Server, error) {
@@ -22,44 +19,86 @@ func Run() (*Server, error) {
 		return nil, err
 	}
 
-	return NewMqtt(l), nil
-}
-
-func RunSecured(config *tls.Config) (*Server, error) {
-	l, err := tls.Listen("tcp", "0.0.0.0:8883", config)
-	if err != nil {
-		return nil, err
+	if DEBUG {
+		log.Println("Listen on address", l.Addr())
 	}
 
-	return NewMqtt(l), nil
+	return &Server{
+		listener:    l,
+		connections: 0,
+	}, nil
 }
 
-func RunWs() (*Server, error) {
-	return nil, nil
-}
-
-func RunSecuredWs() (*Server, error) {
-	return nil, nil
-}
-
-// Accept will return the next available connection or block until a connection becomes available.
 func (m *Server) Accept() (net.Conn, error) {
-	// wait next connection
 	conn, err := m.listener.Accept()
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("Accept new connection from", conn.RemoteAddr())
+	log.Println("Accept new connection from", conn.RemoteAddr())
+	m.connections++
 	return conn, nil
 }
 
-// Close will close the underlying listener and cleanup resources.
+func (m *Server) ReadPacket(conn net.Conn) (packet.Packet, error) {
+	header := make([]byte, 2)
+	n, err := conn.Read(header)
+	if n < 2 || err != nil {
+		return nil, io.ErrUnexpectedEOF
+	}
+
+	if DEBUG {
+		log.Println("packet header:\n", hex.Dump(header))
+	}
+
+	packetLength := header[1]
+	pkt, err := packet.Create(header)
+	if err != nil {
+		log.Println("error create packet")
+		return nil, packet.ErrUnknownPacket
+	}
+
+	if packetLength != 0 {
+		payload := make([]byte, packetLength)
+		n, err = conn.Read(payload)
+		if n < int(packetLength) || err != nil {
+			return nil, io.ErrUnexpectedEOF
+		}
+
+		if DEBUG {
+			log.Println("packet payload:\n", hex.Dump(payload))
+		}
+
+		pkt.Unpack(payload)
+	}
+
+	if DEBUG {
+		log.Println("packet:", pkt.ToString())
+	}
+
+	return pkt, nil
+}
+
+func (m *Server) WritePacket(conn net.Conn, pkt packet.Packet) error {
+	packed := pkt.Pack()
+
+	if DEBUG {
+		log.Println("response:\n", hex.Dump(packed))
+	}
+
+	_, err := conn.Write(packed)
+	if err != nil {
+		log.Println("err write response")
+	}
+
+	return err
+}
+
 func (m *Server) Close() error {
+	m.connections--
 	return m.listener.Close()
 }
 
-// Addr returns the server's network address.
 func (m *Server) Addr() net.Addr {
 	return m.listener.Addr()
 }

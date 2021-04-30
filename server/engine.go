@@ -1,11 +1,9 @@
 package server
 
 import (
-	"encoding/hex"
-	"fmt"
 	"io"
+	"log"
 	"mqtt/packet"
-	"net"
 	"time"
 )
 
@@ -20,111 +18,137 @@ func GetEngine(backend *Backend) *Engine {
 }
 
 func (e Engine) Manage(server *Server) {
-	fmt.Println("Listen on address", server.Addr())
-
 	for {
 		// accept next connection
 		conn, err := server.Accept()
 		if err != nil {
-			fmt.Println("err accept", err.Error())
+			log.Println("err accept", err.Error())
+			conn.Close()
 			continue
 		}
-		go e.Accept(conn)
 
-	}
-}
+		go func() {
+			conn.SetDeadline(time.Now().Add(time.Minute * 5))
 
-func (e Engine) Accept(conn net.Conn) error {
-	conn.SetDeadline(time.Now().Add(time.Minute*5))
-
-	for {
-		err := e.Serve(conn)
-		if err != nil {
-			if err != io.EOF {
-				fmt.Println("err serve: ", err.Error())
+			pkt, err := server.ReadPacket(conn)
+			if err != nil {
+				if DEBUG {
+					log.Println("err read packet", err.Error())
+				}
+				conn.Close()
+				return
 			}
-			conn.Close()
-			return err
-		}
+
+			if pkt.Type() == packet.CONNECT {
+				res := packet.NewConnAck()
+
+				func(cp *packet.ConnPacket) {
+					if cp.Version != 4 {
+						res.ReturnCode = uint8(packet.ConnectUnacceptableProtocol)
+						return
+					}
+
+					if len(cp.ClientID) == 0 && !cp.CleanSession {
+						res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
+						return
+					}
+
+					if e.backend.Authorize(cp.Username, cp.Password) {
+						res.ReturnCode = uint8(packet.ConnectAccepted)
+					} else {
+						res.ReturnCode = uint8(packet.ConnectBadUserPass)
+					}
+
+					res.Session = !cp.CleanSession
+				}(pkt.(*packet.ConnPacket))
+
+				err := server.WritePacket(conn, res)
+				if err != nil {
+					if DEBUG {
+						log.Println("err write packet", err.Error())
+					}
+					conn.Close()
+					return
+				}
+
+				if res.ReturnCode != uint8(packet.ConnectAccepted) {
+					if DEBUG {
+						log.Println("err connection declined")
+					}
+					conn.Close()
+					return
+				}
+			} else {
+				if DEBUG {
+					log.Println("wrong packet. expect CONNECT")
+				}
+				conn.Close()
+				return
+			}
+
+			for {
+				pkt, err := server.ReadPacket(conn)
+				if err != nil {
+					break
+				}
+
+				err = func(p packet.Packet) error {
+					switch pkt.Type() {
+					case packet.DISCONNECT:
+						res := packet.NewDisconnect()
+						server.WritePacket(conn, res)
+						return io.EOF
+					case packet.PING:
+						res := packet.NewPong()
+						return server.WritePacket(conn, res)
+					case packet.SUBSCRIBE:
+						r := pkt.(*packet.SubscribePacket)
+						res := packet.NewSubAck()
+
+						res.Id = r.Id
+						var qos []packet.QoS
+						for _, q := range r.Topics {
+							qos = append(qos, q.QoS)
+						}
+						res.ReturnCodes = qos
+
+						return server.WritePacket(conn, res)
+					case packet.UNSUBSCRIBE:
+						//r := pkt.(*packet.UnSubscriibePacket)
+						res := packet.NewUnSubAck()
+
+						return server.WritePacket(conn, res)
+					case packet.PUBLISH:
+						res := packet.NewPubAck()
+						// if payload is empty - unsubscribe to the topic
+						return server.WritePacket(conn, res)
+					case packet.PUBCOMP:
+						res := packet.NewPubAck()
+						return server.WritePacket(conn, res)
+					case packet.PUBREC:
+						res := packet.NewPubAck()
+						return server.WritePacket(conn, res)
+					case packet.PUBREL:
+						res := packet.NewPubAck()
+						return server.WritePacket(conn, res)
+					default:
+						return packet.ErrUnknownPacket
+					}
+				}(pkt)
+
+				if err != nil {
+					if err != io.EOF {
+						log.Println("err serve: ", err.Error())
+					}
+					log.Println("client disconnect")
+					conn.Close()
+					break
+				}
+			}
+		}()
 	}
 }
 
 func (e Engine) Close() {
 	e.backend.Close()
-}
-
-func (e Engine) Serve(conn net.Conn) error {
-	fHeader := make([]byte, 2)
-	n, err := conn.Read(fHeader)
-	if n < 2 || err != nil {
-		return io.ErrUnexpectedEOF
-	}
-
-	fmt.Println("request")
-	fmt.Println(hex.Dump(fHeader))
-
-	pkt, packetLength, err := packet.Create(fHeader)
-
-	if packetLength != 0 {
-		vHeader := make([]byte, packetLength)
-		n, err = conn.Read(vHeader)
-		if n < int(packetLength) || err != nil {
-			return io.ErrUnexpectedEOF
-		}
-
-		fmt.Println(hex.Dump(vHeader))
-		pkt.Unpack(vHeader)
-	}
-
-	fmt.Println("packet", pkt.ToString(), "\n")
-
-	var res packet.Packet
-	switch pkt.Type() {
-	case packet.CONNECT:
-		res = packet.NewConnAck()
-		res.(*packet.ConnAckPacket).Session = !pkt.(*packet.ConnPacket).CleanSession
-		res.(*packet.ConnAckPacket).ReturnCode = uint8(packet.ConnectAccepted)
-	case packet.DISCONNECT:
-		return io.EOF
-	case packet.SUBSCRIBE:
-		res = packet.NewSubAck()
-
-		// send SUBACK
-		res.(*packet.SubAckPacket).Id = pkt.(*packet.SubscribePacket).Id
-		var qos []packet.QoS
-		for _, q := range pkt.(*packet.SubscribePacket).Topics {
-			qos = append(qos, q.QoS)
-		}
-		res.(*packet.SubAckPacket).ReturnCodes = qos
-	case packet.UNSUBSCRIBE:
-		res = packet.NewUnSubAck()
-	case packet.PUBLISH:
-		res = pkt
-		
-		// if payload is empty - unsubscribe to the topic
-	case packet.PUBACK:
-		res = pkt
-	case packet.PUBCOMP:
-		;
-	case packet.PUBREC:
-		;
-	case packet.PUBREL:
-		;
-	case packet.PING:
-		res = packet.NewPong()
-	default:
-		return packet.ErrUnknownPacket
-	}
-
-	r := res.Pack()
-
-	fmt.Println("response")
-	fmt.Println(hex.Dump(r))
-
-	n, err = conn.Write(r)
-	if err != nil {
-		fmt.Println("err write")
-	}
-
-	return nil
 }
