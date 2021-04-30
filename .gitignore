@@ -2,3 +2,5 @@
 *.iml
 *.crt
 *.key
+server.crt
+server.key
