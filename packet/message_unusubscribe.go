@@ -1,8 +1,6 @@
 package packet
 
-import (
-
-)
+import ()
 
 type UnSubscriibePacket struct {
 	Header []byte
@@ -34,6 +32,6 @@ func (u *UnSubscriibePacket) Pack() []byte {
 	return nil
 }
 
-func (u *UnSubscriibePacket) ToString() string {
+func (u *UnSubscriibePacket) String() string {
 	return "Message Unsubscribe: {}"
 }

@@ -6,8 +6,8 @@ import (
 )
 
 type SubAckPacket struct {
-	Header []byte
-	Id uint16
+	Header      []byte
+	Id          uint16
 	ReturnCodes []QoS
 }
 
@@ -53,7 +53,7 @@ func (sack *SubAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(SUBACK) << 4
-	buf[1] = byte(sack.Length())	// Size
+	buf[1] = byte(sack.Length()) // Size
 	binary.BigEndian.PutUint16(buf[2:], sack.Id)
 
 	for _, rc := range sack.ReturnCodes {
@@ -63,7 +63,7 @@ func (sack *SubAckPacket) Pack() []byte {
 	return buf
 }
 
-func (sack *SubAckPacket) ToString() string {
+func (sack *SubAckPacket) String() string {
 	var sb strings.Builder
 
 	sb.WriteString("Message SubAck: [")

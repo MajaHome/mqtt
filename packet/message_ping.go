@@ -34,6 +34,6 @@ func (p *PingPacket) Pack() []byte {
 	return buf
 }
 
-func (p *PingPacket) ToString() string {
+func (p *PingPacket) String() string {
 	return "Message Ping: {}"
 }

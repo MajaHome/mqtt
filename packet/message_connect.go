@@ -25,7 +25,7 @@ func CreateConnect(buf []byte) *ConnPacket {
 	}
 }
 
-func (c *ConnPacket) Type() Type{
+func (c *ConnPacket) Type() Type {
 	return CONNECT
 }
 
@@ -34,7 +34,7 @@ func (c *ConnPacket) Length() int {
 	if c.Will != nil {
 		l += c.Will.Length()
 	}
-	l += 2 /*len*/ + len(c.Username) + 2/*len*/ + len(c.Password)
+	l += 2 /*len*/ + len(c.Username) + 2 /*len*/ + len(c.Password)
 
 	return l
 }
@@ -69,7 +69,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 		return err
 	}
 
-	if flag & 0x01 != 0 {
+	if flag&0x01 != 0 {
 		return ErrUnknownPacket
 	}
 
@@ -82,6 +82,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	willFlag := ((flag >> 2) & 0x1) == 1
 	willRetain := ((flag >> 5) & 0x1) == 1
 	willQoS := QoS((flag >> 3) & 0x3)
+
 	if !willQoS.Valid() {
 		return ErrUnknownPacket
 	}
@@ -167,9 +168,9 @@ func (c *ConnPacket) Pack() []byte {
 	offset := 0
 	buf := make([]byte, c.Length())
 
-	offset = WriteInt8(buf, offset, byte(CONNECT) << 4)
+	offset = WriteInt8(buf, offset, byte(CONNECT)<<4)
 	offset = WriteInt8(buf, offset, byte(c.Length()))
-	offset = WriteInt16(buf, offset, 0x04)	// 4 version, MQTT
+	offset = WriteInt16(buf, offset, 0x04) // 4 version, MQTT
 
 	buf = append(buf, []byte("MQTT")...)
 	offset += 4
@@ -218,7 +219,7 @@ func (c *ConnPacket) Pack() []byte {
 	return buf
 }
 
-func (c *ConnPacket) ToString() string {
-	return "Message Connect: {ver="+strconv.Itoa(int(c.Version))+", keepalive="+
-		strconv.Itoa(int(c.KeepAlive))+", clientId="+c.ClientID+", login="+c.Username+", password="+c.Password+"}"
+func (c *ConnPacket) String() string {
+	return "Message Connect: {ver=" + strconv.Itoa(int(c.Version)) + ", keepalive=" +
+		strconv.Itoa(int(c.KeepAlive)) + ", clientId=" + c.ClientID + ", login=" + c.Username + ", password=" + c.Password + "}"
 }

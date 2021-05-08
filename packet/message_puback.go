@@ -6,7 +6,7 @@ import (
 
 type PubAckPacket struct {
 	Header []byte
-	Id uint16
+	Id     uint16
 }
 
 func NewPubAck() *PubAckPacket {
@@ -32,7 +32,7 @@ func (pack *PubAckPacket) Unpack(buf []byte) error {
 	if err != nil {
 		return err
 	}
-	pack.Id =id
+	pack.Id = id
 
 	return nil
 }
@@ -41,13 +41,13 @@ func (pack *PubAckPacket) Pack() []byte {
 	offset := 0
 	buf := make([]byte, 4)
 
-	offset = WriteInt8(buf, offset, byte(PUBACK) << 4)
+	offset = WriteInt8(buf, offset, byte(PUBACK)<<4)
 	offset = WriteInt8(buf, offset, byte(pack.Length()))
 	offset = WriteInt16(buf, offset, pack.Id)
 
 	return buf
 }
 
-func (pack *PubAckPacket) ToString() string {
+func (pack *PubAckPacket) String() string {
 	return "Message PubAck: { id=" + strconv.Itoa(int(pack.Id)) + "}"
 }

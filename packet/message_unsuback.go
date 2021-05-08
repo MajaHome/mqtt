@@ -1,8 +1,6 @@
 package packet
 
-import (
-
-)
+import ()
 
 type UnSubAckPacket struct {
 	Header []byte
@@ -34,6 +32,6 @@ func (uack *UnSubAckPacket) Pack() []byte {
 	return nil
 }
 
-func (uack *UnSubAckPacket) ToString() string {
+func (uack *UnSubAckPacket) String() string {
 	return "Message UnSubAck: {}"
 }

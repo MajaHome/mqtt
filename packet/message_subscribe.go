@@ -6,17 +6,17 @@ import (
 )
 
 type SubscribePayload struct {
-	QoS QoS
+	QoS   QoS
 	Topic string
 }
 
 func (p *SubscribePayload) Length() int {
-	return len(p.Topic) + 1/*qos*/ + 2/*len*/
+	return len(p.Topic) + 1 /*qos*/ + 2 /*len*/
 }
 
 func (p *SubscribePayload) Pack() []byte {
 	var offset int = 0
-	buf := make([]byte, p.Length() + 2)
+	buf := make([]byte, p.Length()+2)
 
 	offset = WriteInt16(buf, offset, uint16(p.Length()))
 	copy(buf[offset:], p.Topic)
@@ -32,7 +32,7 @@ func (p *SubscribePayload) ToString() string {
 
 type SubscribePacket struct {
 	Header []byte
-	Id uint16
+	Id     uint16
 	Topics []SubscribePayload
 }
 
@@ -92,7 +92,7 @@ func (s *SubscribePacket) Unpack(buf []byte) error {
 func (s *SubscribePacket) Pack() []byte {
 	var offset int = 0
 	buf := make([]byte, 4)
-	offset = WriteInt8(buf, offset, byte(SUBSCRIBE) << 4)
+	offset = WriteInt8(buf, offset, byte(SUBSCRIBE)<<4)
 	offset = WriteInt8(buf, offset, byte(s.Length()))
 	offset = WriteInt16(buf, offset, s.Id)
 
@@ -103,7 +103,7 @@ func (s *SubscribePacket) Pack() []byte {
 	return buf
 }
 
-func (s *SubscribePacket) ToString() string {
+func (s *SubscribePacket) String() string {
 	var sb strings.Builder
 
 	sb.WriteString("Message Subscribe: {id:")

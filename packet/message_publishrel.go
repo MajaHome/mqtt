@@ -1,8 +1,6 @@
 package packet
 
-import (
-
-)
+import ()
 
 type PubRelPacket struct {
 	Header []byte
@@ -34,6 +32,6 @@ func (p *PubRelPacket) Pack() []byte {
 	return nil
 }
 
-func (p *PubRelPacket) ToString() string {
+func (p *PubRelPacket) String() string {
 	return "Message PubRel: {}"
 }

@@ -30,11 +30,11 @@ func (p *PongPacket) Pack() []byte {
 	buf := make([]byte, 2)
 
 	buf[0] = byte(PONG) << 4
-	buf[1] = byte(p.Length())	// Size
+	buf[1] = byte(p.Length()) // Size
 
 	return buf
 }
 
-func (p *PongPacket) ToString() string {
+func (p *PongPacket) String() string {
 	return "Message Pong: {}"
 }

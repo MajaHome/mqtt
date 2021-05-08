@@ -12,7 +12,7 @@ const (
 )
 
 type ConnAckPacket struct {
-	Header []byte
+	Header     []byte
 	Session    bool
 	ReturnCode uint8
 }
@@ -23,7 +23,7 @@ func NewConnAck() *ConnAckPacket {
 
 func CreateConnAck(buf []byte) *ConnAckPacket {
 	return &ConnAckPacket{
-		Header: buf,
+		Header:  buf,
 		Session: false,
 	}
 }
@@ -61,7 +61,7 @@ func (cack *ConnAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(CONNACK) << 4
-	buf[1] = byte(cack.Length())	// Size
+	buf[1] = byte(cack.Length()) // Size
 	if cack.Session {
 		buf[2] = 0x01
 	} else {
@@ -72,7 +72,7 @@ func (cack *ConnAckPacket) Pack() []byte {
 	return buf
 }
 
-func (cack *ConnAckPacket) ToString() string {
+func (cack *ConnAckPacket) String() string {
 	return "Message ConnAck: { session: " + strconv.FormatBool(cack.Session) + ", code:" +
 		strconv.Itoa(int(cack.ReturnCode)) + "}"
 }

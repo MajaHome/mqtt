@@ -34,6 +34,6 @@ func (cack *DisconnectPacket) Pack() []byte {
 	return buf
 }
 
-func (cack *DisconnectPacket) ToString() string {
+func (cack *DisconnectPacket) String() string {
 	return "Message Disconnect: {}"
 }

@@ -1,8 +1,6 @@
 package packet
 
-import (
-
-)
+import ()
 
 type PubCompPacket struct {
 	Header []byte
@@ -34,6 +32,6 @@ func (p *PubCompPacket) Pack() []byte {
 	return nil
 }
 
-func (p *PubCompPacket) ToString() string {
+func (p *PubCompPacket) String() string {
 	return "Message PubComp: {}"
 }
