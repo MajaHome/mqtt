@@ -1,25 +1,43 @@
 package server
 
 import (
-	"io"
+	"crypto/rand"
 	"log"
+	"mqtt/model"
 	"mqtt/packet"
-	"time"
+	"net"
+
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 )
 
 type Engine struct {
-	backend *Backend
+	db      *gorm.DB
+	clients map[string]*Client
+	channel chan string
 }
 
-func GetEngine(backend *Backend) *Engine {
+func NewEngine() *Engine {
+	log.Println("initialize database")
+	conn, err := gorm.Open("sqlite3", "mqtt.db")
+	if err != nil {
+		panic(err)
+	}
+
+	log.Println("migrate database")
+	conn.AutoMigrate(&model.User{})
+
 	return &Engine{
-		backend: backend,
+		db:      conn,
+		clients: make(map[string]*Client),
+		channel: make(chan string),
 	}
 }
 
-func (e Engine) Manage(server *Server) {
+func (e Engine) Process(server *Server) {
+	go e.manageChannel()
+
 	for {
-		// accept next connection
 		conn, err := server.Accept()
 		if err != nil {
 			log.Println("err accept", err.Error())
@@ -28,13 +46,9 @@ func (e Engine) Manage(server *Server) {
 		}
 
 		go func() {
-			conn.SetDeadline(time.Now().Add(time.Minute * 5))
-
 			pkt, err := server.ReadPacket(conn)
 			if err != nil {
-				if DEBUG {
-					log.Println("err read packet", err.Error())
-				}
+				log.Println("err read packet", err.Error())
 				conn.Close()
 				return
 			}
@@ -42,113 +56,95 @@ func (e Engine) Manage(server *Server) {
 			if pkt.Type() == packet.CONNECT {
 				res := packet.NewConnAck()
 
-				func(cp *packet.ConnPacket) {
-					if cp.Version != 4 {
-						res.ReturnCode = uint8(packet.ConnectUnacceptableProtocol)
-						return
-					}
+				cp := pkt.(*packet.ConnPacket)
 
-					if len(cp.ClientID) == 0 && !cp.CleanSession {
-						res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
-						return
-					}
+				// check version, now only 4 (3.11)
+				if cp.Version != 4 {
+					res.ReturnCode = uint8(packet.ConnectUnacceptableProtocol)
+					return
+				}
 
-					if e.backend.Authorize(cp.Username, cp.Password) {
-						res.ReturnCode = uint8(packet.ConnectAccepted)
-					} else {
+				if len(cp.ClientID) == 0 && !cp.CleanSession {
+					res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
+					return
+				}
+
+				res.ReturnCode = uint8(packet.ConnectAccepted)
+
+				// check authorization
+				if len(cp.Username) > 0 {
+					var user model.User
+					result := e.db.Take(&user, "user_name = ? and password = ?", cp.Username, cp.Password)
+					if result.Error != nil {
+						log.Println("username/password is wrong")
 						res.ReturnCode = uint8(packet.ConnectBadUserPass)
 					}
+				}
 
-					res.Session = !cp.CleanSession
-				}(pkt.(*packet.ConnPacket))
+				var client *Client
+				if res.ReturnCode == uint8(packet.ConnectAccepted) {
+					if !cp.CleanSession && e.clients[cp.ClientID] != nil {
+						res.Session = !cp.CleanSession
+						client = e.saveClient(cp.ClientID, conn)
+						if cp.Will != nil {
+							client.SaveWill(cp.Will.QoS, cp.Will.Retain)
+						}
+					} else {
+						res.Session = false
+						client = e.saveClient("", conn)
+					}
+				}
 
 				err := server.WritePacket(conn, res)
 				if err != nil {
-					if DEBUG {
-						log.Println("err write packet", err.Error())
-					}
+					log.Println("err write packet", err.Error())
 					conn.Close()
 					return
 				}
 
+				// close connection if not authorized
 				if res.ReturnCode != uint8(packet.ConnectAccepted) {
-					if DEBUG {
-						log.Println("err connection declined")
-					}
+					log.Println("err connection declined")
 					conn.Close()
 					return
 				}
+
+				// start manage client
+				client.Start(server)
 			} else {
-				if DEBUG {
-					log.Println("wrong packet. expect CONNECT")
-				}
+				log.Println("wrong packet. expect CONNECT")
 				conn.Close()
 				return
-			}
-
-			for {
-				pkt, err := server.ReadPacket(conn)
-				if err != nil {
-					break
-				}
-
-				err = func(p packet.Packet) error {
-					switch pkt.Type() {
-					case packet.DISCONNECT:
-						res := packet.NewDisconnect()
-						server.WritePacket(conn, res)
-						return io.EOF
-					case packet.PING:
-						res := packet.NewPong()
-						return server.WritePacket(conn, res)
-					case packet.SUBSCRIBE:
-						r := pkt.(*packet.SubscribePacket)
-						res := packet.NewSubAck()
-
-						res.Id = r.Id
-						var qos []packet.QoS
-						for _, q := range r.Topics {
-							qos = append(qos, q.QoS)
-						}
-						res.ReturnCodes = qos
-
-						return server.WritePacket(conn, res)
-					case packet.UNSUBSCRIBE:
-						//r := pkt.(*packet.UnSubscriibePacket)
-						res := packet.NewUnSubAck()
-
-						return server.WritePacket(conn, res)
-					case packet.PUBLISH:
-						res := packet.NewPubAck()
-						// if payload is empty - unsubscribe to the topic
-						return server.WritePacket(conn, res)
-					case packet.PUBCOMP:
-						res := packet.NewPubAck()
-						return server.WritePacket(conn, res)
-					case packet.PUBREC:
-						res := packet.NewPubAck()
-						return server.WritePacket(conn, res)
-					case packet.PUBREL:
-						res := packet.NewPubAck()
-						return server.WritePacket(conn, res)
-					default:
-						return packet.ErrUnknownPacket
-					}
-				}(pkt)
-
-				if err != nil {
-					if err != io.EOF {
-						log.Println("err serve: ", err.Error())
-					}
-					log.Println("client disconnect")
-					conn.Close()
-					break
-				}
 			}
 		}()
 	}
 }
 
-func (e Engine) Close() {
-	e.backend.Close()
+func (e *Engine) manageChannel() {
+	for msg := range e.channel {
+		log.Println("engine " + msg)
+	}
+
+	log.Println("closed communication channel")
+}
+
+func (e *Engine) saveClient(id string, conn net.Conn) *Client {
+	var cid string
+	if id == "" {
+		// generate temporary ident
+		ident := make([]byte, 8)
+		rand.Read(ident)
+		cid = string(cid)
+	} else {
+		cid = id
+	}
+
+	if e.clients[id] != nil {
+		e.clients[id].conn = conn
+	} else {
+		client := NewClient(cid, conn, e.channel)
+		e.clients[id] = client
+	}
+
+	return e.clients[id]
 }
