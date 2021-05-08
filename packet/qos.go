@@ -19,6 +19,9 @@ func (q QoS) Valid() bool {
 	return q == 0x0 || q == 0x1 || q == 0x2
 }
 
-func (q QoS) ToString() string {
+func (q QoS) Int() int {
+	return int(q)
+}
+func (q QoS) String() string {
 	return strconv.Itoa(int(q))
 }

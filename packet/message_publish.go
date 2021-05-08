@@ -87,7 +87,6 @@ func (p *PublishPacket) Pack() []byte {
 		packType |= 0x8
 	}
 
-	// do not check QoS is valid
 	if p.QoS == QoS(1) {
 		packType |= 0x2
 	}
@@ -112,6 +111,6 @@ func (p *PublishPacket) Pack() []byte {
 
 func (p *PublishPacket) String() string {
 	return "Message Publish: {id=" + strconv.Itoa(int(p.Id)) + ", topic=" + p.Topic + ", payload=" +
-		p.Payload + ", qos=" + p.QoS.ToString() + ", retain=" + strconv.FormatBool(p.Retain) +
+		p.Payload + ", qos=" + p.QoS.String() + ", retain=" + strconv.FormatBool(p.Retain) +
 		", dup=" + strconv.FormatBool(p.DUP) + "}"
 }

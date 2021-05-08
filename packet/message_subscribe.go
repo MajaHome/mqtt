@@ -26,8 +26,8 @@ func (p *SubscribePayload) Pack() []byte {
 	return buf
 }
 
-func (p *SubscribePayload) ToString() string {
-	return "{topic:" + p.Topic + ", qos=" + p.QoS.ToString() + "}"
+func (p *SubscribePayload) String() string {
+	return "{topic:" + p.Topic + ", qos=" + p.QoS.String() + "}"
 }
 
 type SubscribePacket struct {
@@ -110,7 +110,7 @@ func (s *SubscribePacket) String() string {
 	sb.WriteString(strconv.Itoa(int(s.Id)))
 	for _, t := range s.Topics {
 		sb.WriteString(", payload: ")
-		sb.WriteString(t.ToString())
+		sb.WriteString(t.String())
 	}
 	sb.WriteString("}")
 

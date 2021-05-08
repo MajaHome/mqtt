@@ -10,29 +10,24 @@ import (
 
 type Client struct {
 	conn     net.Conn
-	engine   chan string
+	engine   chan Event
 	incoming chan string
-	Topics   []string // subscribed topics
-	Ident    string
 
-	WillQoS    packet.QoS
-	WillRerail bool
+	id       string
+	Topics   []string // subscribed topics
+
+	willQoS    packet.QoS
+	willRerail bool
 }
 
-func NewClient(ident string, conn net.Conn, channel chan string) *Client {
+func NewClient(id string, conn net.Conn, engine chan Event) *Client {
 	inChannel := make(chan string)
 
 	return &Client{
 		conn:     conn,
-		engine:   channel,
+		engine:   engine,
 		incoming: inChannel,
-		Ident:    ident,
-	}
-}
-
-func (c *Client) readFromChannel() {
-	for msg := range c.incoming {
-		log.Println(msg)
+		id:       id,
 	}
 }
 
@@ -41,7 +36,6 @@ func (c *Client) Start(server *Server) {
 		c.conn.SetReadDeadline(time.Now().Add(time.Second * 1))
 		pkt, _ := server.ReadPacket(c.conn)
 		if pkt == nil {
-			//			log.Println("client: " + tmp)
 			continue
 		}
 
@@ -49,6 +43,13 @@ func (c *Client) Start(server *Server) {
 		switch pkt.Type() {
 		case packet.DISCONNECT:
 			res := packet.NewDisconnect()
+
+			event := &Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+			}
+			c.engine <- *event
+
 			err = server.WritePacket(c.conn, res)
 		case packet.PING:
 			res := packet.NewPong()
@@ -60,18 +61,32 @@ func (c *Client) Start(server *Server) {
 			r := pkt.(*packet.SubscribePacket)
 			res.Id = r.Id
 			var qos []packet.QoS
+			var topics []EventTopic
 			for _, q := range r.Topics {
+				topics = append(topics, EventTopic { qos: q.QoS.Int(),	topic: q.Topic })
 				qos = append(qos, q.QoS)
 			}
 			res.ReturnCodes = qos
 
-			c.engine <- res.String()
+			event := Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+				messageId: r.Id,
+				topics: topics,
+			}
+			c.engine <- event
 
 			err = server.WritePacket(c.conn, res)
 		case packet.UNSUBSCRIBE:
 			res := packet.NewUnSubAck()
 
 			//r := pkt.(*packet.UnSubscriibePacket)
+
+			event := &Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+			}
+			c.engine <- *event
 
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBLISH:
@@ -108,17 +123,42 @@ func (c *Client) Start(server *Server) {
 			*/
 
 			// if payload is empty - unsubscribe to the topic
+
+			event := &Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+			}
+			c.engine <- *event
+
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBCOMP:
 			res := packet.NewPubAck()
+
+			event := &Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+			}
+			c.engine <- *event
 
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBREC:
 			res := packet.NewPubAck()
 
+			event := &Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+			}
+			c.engine <- *event
+
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBREL:
 			res := packet.NewPubAck()
+
+			event := &Event{
+				clientId: c.id,
+				packetType: pkt.Type(),
+			}
+			c.engine <- *event
 
 			err = server.WritePacket(c.conn, res)
 		default:
@@ -126,15 +166,17 @@ func (c *Client) Start(server *Server) {
 		}
 
 		if err != nil {
-			if err != io.EOF {
+			if err == io.EOF {
+				// normal disconnect
+				/*
+					Will Flag - при установленном флаге, после того, как клиент отключится от брокера без отправки команды DISCONNECT
+					(в случаях непредсказуемого обрыва связи и т.д.), брокер оповестит об этом всех подключенных к нему клиентов через
+					так называемый Will Message.
+				*/
+			} else {
 				log.Println("err serve: ", err.Error())
 			}
 
-			/*
-				Will Flag - при установленном флаге, после того, как клиент отключится от брокера без отправки команды DISCONNECT
-				(в случаях непредсказуемого обрыва связи и т.д.), брокер оповестит об этом всех подключенных к нему клиентов через
-				так называемый Will Message.
-			*/
 			log.Println("client disconnect")
 			c.conn.Close()
 			break
@@ -142,7 +184,7 @@ func (c *Client) Start(server *Server) {
 	}
 }
 
-func (c *Client) SaveWill(qos packet.QoS, retain bool) {
-	c.WillQoS = qos
-	c.WillRerail = retain
+func (c *Client) saveWill(qos packet.QoS, retain bool) {
+	c.willQoS = qos
+	c.willRerail = retain
 }

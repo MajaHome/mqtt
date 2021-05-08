@@ -69,7 +69,7 @@ func (sack *SubAckPacket) String() string {
 	sb.WriteString("Message SubAck: [")
 	for _, rc := range sack.ReturnCodes {
 		sb.WriteString(", returnCode: ")
-		sb.WriteString(rc.ToString())
+		sb.WriteString(rc.String())
 	}
 	sb.WriteString("]")
 

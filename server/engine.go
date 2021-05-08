@@ -14,7 +14,7 @@ import (
 type Engine struct {
 	db      *gorm.DB
 	clients map[string]*Client
-	channel chan string
+	channel chan Event
 }
 
 func NewEngine() *Engine {
@@ -30,7 +30,7 @@ func NewEngine() *Engine {
 	return &Engine{
 		db:      conn,
 		clients: make(map[string]*Client),
-		channel: make(chan string),
+		channel: make(chan Event),
 	}
 }
 
@@ -87,11 +87,11 @@ func (e Engine) Process(server *Server) {
 						res.Session = !cp.CleanSession
 						client = e.saveClient(cp.ClientID, conn)
 						if cp.Will != nil {
-							client.SaveWill(cp.Will.QoS, cp.Will.Retain)
+							client.saveWill(cp.Will.QoS, cp.Will.Retain)
 						}
 					} else {
 						res.Session = false
-						client = e.saveClient("", conn)
+						client = e.saveClient(cp.ClientID, conn)
 					}
 				}
 
@@ -121,8 +121,8 @@ func (e Engine) Process(server *Server) {
 }
 
 func (e *Engine) manageChannel() {
-	for msg := range e.channel {
-		log.Println("engine " + msg)
+	for event := range e.channel {
+		log.Println("engine " + event.String())
 	}
 
 	log.Println("closed communication channel")

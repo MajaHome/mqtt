@@ -49,37 +49,36 @@ func Types() []Type {
 		DISCONNECT}
 }
 
-// String returns the type as a string.
-func (t Type) ToString() string {
+func (t Type) String() string {
 	switch t {
 	case CONNECT:
-		return "CreateConnect"
+		return "Connect"
 	case CONNACK:
-		return "CreateConnAck"
+		return "ConnAck"
 	case PUBLISH:
-		return "CreatePublish"
+		return "Publish"
 	case PUBACK:
-		return "CreatePubAck"
+		return "PubAck"
 	case PUBREC:
-		return "CreatePubRec"
+		return "PubRec"
 	case PUBREL:
-		return "CreatePubRel"
+		return "PubRel"
 	case PUBCOMP:
-		return "CreatePubComp"
+		return "PubComp"
 	case SUBSCRIBE:
-		return "CreateSubscribe"
+		return "Subscribe"
 	case SUBACK:
-		return "CreateSubAck"
+		return "SubAck"
 	case UNSUBSCRIBE:
 		return "Unsubscribe"
 	case UNSUBACK:
-		return "UnsubscribeAck"
+		return "UnsubAck"
 	case PING:
-		return "CreatePing"
+		return "Ping"
 	case PONG:
-		return "CreatePong"
+		return "Pong"
 	case DISCONNECT:
-		return "Flag"
+		return "Disconnect"
 	}
 
 	return "Unknown"

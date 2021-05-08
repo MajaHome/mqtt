@@ -33,7 +33,7 @@ func (m *Message) Pack() []byte {
 }
 
 func (m *Message) String() string {
-	return "Message { topic=" + m.Topic + ", QoS=" + m.QoS.ToString() + ", retain=" + strconv.FormatBool(m.Retain) +
+	return "Message { topic=" + m.Topic + ", QoS=" + m.QoS.String() + ", retain=" + strconv.FormatBool(m.Retain) +
 		", payload=" + m.Payload + ", dublicate=" + strconv.FormatBool(m.Dublicate) + ", flag=" +
 		strconv.FormatBool(m.Flag) + "}"
 }
