@@ -35,7 +35,7 @@ func NewEngine() *Engine {
 }
 
 func (e Engine) Process(server *Server) {
-	go e.manageChannel()
+	go e.manageClients()
 
 	for {
 		conn, err := server.Accept()
@@ -120,9 +120,16 @@ func (e Engine) Process(server *Server) {
 	}
 }
 
-func (e *Engine) manageChannel() {
+func (e *Engine) manageClients() {
 	for event := range e.channel {
 		log.Println("engine " + event.String())
+
+		switch event.packetType {
+		case packet.PUBLISH:
+			//client := e.clients[event.clientId]
+			//client.channel <- "ok"
+		default:
+		}
 	}
 
 	log.Println("closed communication channel")

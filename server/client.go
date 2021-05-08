@@ -9,32 +9,40 @@ import (
 )
 
 type Client struct {
-	conn     net.Conn
-	engine   chan Event
-	incoming chan string
+	conn    net.Conn
+	engine  chan Event
+	channel chan string
 
-	id       string
-	Topics   []string // subscribed topics
+	id     string
+	Topics []string // subscribed topics
 
 	willQoS    packet.QoS
 	willRerail bool
 }
 
 func NewClient(id string, conn net.Conn, engine chan Event) *Client {
-	inChannel := make(chan string)
+	channel := make(chan string)
 
 	return &Client{
-		conn:     conn,
-		engine:   engine,
-		incoming: inChannel,
-		id:       id,
+		conn:    conn,
+		engine:  engine,
+		channel: channel,
+		id:      id,
 	}
 }
 
 func (c *Client) Start(server *Server) {
 	for {
-		c.conn.SetReadDeadline(time.Now().Add(time.Second * 1))
+		c.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 10000))
 		pkt, _ := server.ReadPacket(c.conn)
+
+		select {
+		case msg := <-c.channel:
+			log.Println("client: " + msg)
+		default:
+			break
+		}
+
 		if pkt == nil {
 			continue
 		}
@@ -45,7 +53,7 @@ func (c *Client) Start(server *Server) {
 			res := packet.NewDisconnect()
 
 			event := &Event{
-				clientId: c.id,
+				clientId:   c.id,
 				packetType: pkt.Type(),
 			}
 			c.engine <- *event
@@ -56,41 +64,39 @@ func (c *Client) Start(server *Server) {
 
 			err = server.WritePacket(c.conn, res)
 		case packet.SUBSCRIBE:
+			req := pkt.(*packet.SubscribePacket)
 			res := packet.NewSubAck()
 
-			r := pkt.(*packet.SubscribePacket)
-			res.Id = r.Id
+			res.Id = req.Id
 			var qos []packet.QoS
-			var topics []EventTopic
-			for _, q := range r.Topics {
-				topics = append(topics, EventTopic { qos: q.QoS.Int(),	topic: q.Topic })
-				qos = append(qos, q.QoS)
+			for _, topic := range req.Topics {
+				event := Event{
+					clientId:   c.id,
+					packetType: pkt.Type(),
+					messageId:  req.Id,
+					topic:      topic.Topic,
+					qos:        topic.QoS.Int(),
+				}
+				c.engine <- event
+				qos = append(qos, topic.QoS)
 			}
 			res.ReturnCodes = qos
 
-			event := Event{
-				clientId: c.id,
-				packetType: pkt.Type(),
-				messageId: r.Id,
-				topics: topics,
-			}
-			c.engine <- event
-
 			err = server.WritePacket(c.conn, res)
 		case packet.UNSUBSCRIBE:
+			//req := pkt.(*packet.UnSubscriibePacket)
 			res := packet.NewUnSubAck()
 
-			//r := pkt.(*packet.UnSubscriibePacket)
-
 			event := &Event{
-				clientId: c.id,
+				clientId:   c.id,
 				packetType: pkt.Type(),
 			}
 			c.engine <- *event
 
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBLISH:
-			res := packet.NewPubAck()
+			req := pkt.(*packet.PublishPacket)
+
 			/*
 				RETAIN – при публикации данных с установленным флагом retain, брокер сохранит его. При
 				следующей подписке на этот топик брокер незамедлительно отправит сообщение с этим флагом.
@@ -125,38 +131,38 @@ func (c *Client) Start(server *Server) {
 			// if payload is empty - unsubscribe to the topic
 
 			event := &Event{
-				clientId: c.id,
+				clientId:   c.id,
 				packetType: pkt.Type(),
+				messageId:  req.Id,
+				topic:      req.Topic,
+				payload:    req.Payload,
+				qos:        req.QoS.Int(),
+				retain:     req.Retain,
+				dublicate:  req.DUP,
 			}
 			c.engine <- *event
 
-			err = server.WritePacket(c.conn, res)
-		case packet.PUBCOMP:
-			res := packet.NewPubAck()
-
-			event := &Event{
-				clientId: c.id,
-				packetType: pkt.Type(),
+			switch req.QoS {
+			case packet.AtLeastOnce:
+				res := packet.NewPubAck()
+				res.Id = req.Id
+				err = server.WritePacket(c.conn, res)
+			case packet.ExactlyOnce:
+				res := packet.NewPubRec()
+				res.Id = req.Id
+				// read response from engine - if packet with id is registered
+				err = server.WritePacket(c.conn, res)
 			}
-			c.engine <- *event
-
-			err = server.WritePacket(c.conn, res)
-		case packet.PUBREC:
-			res := packet.NewPubAck()
-
-			event := &Event{
-				clientId: c.id,
-				packetType: pkt.Type(),
-			}
-			c.engine <- *event
-
-			err = server.WritePacket(c.conn, res)
 		case packet.PUBREL:
-			res := packet.NewPubAck()
+			req := pkt.(*packet.PubRelPacket)
+			res := packet.NewPubComp()
+			res.Id = req.Id
+			// read response from engine - if packet with id is registered
 
 			event := &Event{
-				clientId: c.id,
+				clientId:   c.id,
 				packetType: pkt.Type(),
+				messageId:  req.Id,
 			}
 			c.engine <- *event
 

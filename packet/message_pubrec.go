@@ -1,9 +1,10 @@
 package packet
 
-import ()
+import "strconv"
 
 type PubRecPacket struct {
 	Header []byte
+	Id     uint16
 }
 
 func NewPubRec() *PubRecPacket {
@@ -21,17 +22,30 @@ func (p *PubRecPacket) Type() Type {
 }
 
 func (p *PubRecPacket) Length() int {
-	return 0
+	return 2
 }
 
 func (p *PubRecPacket) Unpack(buf []byte) error {
+	id, _, err := ReadInt16(buf, 0)
+	if err != nil {
+		return err
+	}
+	p.Id = id
+
 	return nil
 }
 
 func (p *PubRecPacket) Pack() []byte {
-	return nil
+	offset := 0
+	buf := make([]byte, 4)
+
+	offset = WriteInt8(buf, offset, byte(PUBREC)<<4)
+	offset = WriteInt8(buf, offset, byte(p.Length()))
+	offset = WriteInt16(buf, offset, p.Id)
+
+	return buf
 }
 
 func (p *PubRecPacket) String() string {
-	return "Message PubRec: {}"
+	return "Message PubRec: { id=" + strconv.Itoa(int(p.Id)) + " }"
 }

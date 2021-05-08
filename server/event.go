@@ -9,27 +9,26 @@ import (
 type Event struct {
 	clientId   string
 	packetType packet.Type
-	topics     []EventTopic
 	messageId  uint16
-}
-
-type EventTopic struct {
-	qos int
 	topic string
+	payload string
+	qos int
+	retain bool
+	dublicate bool
 }
 
 func (e Event) String() string {
 	var sb strings.Builder
 
 	sb.WriteString("Event: { ")
-	sb.WriteString("clientId: \"" + e.clientId +"\",")
-	sb.WriteString("type:\"" + e.packetType.String() + "\",")
-	sb.WriteString("messageId: \"" + strconv.Itoa(int(e.messageId)) + "\",")
-	sb.WriteString("topics: [")
-	for _, t := range e.topics {
-		sb.WriteString("{ qos: " + strconv.Itoa(t.qos) + ", topic: \"" + t.topic + "\" }")
-	}
-	sb.WriteString("]}")
+	sb.WriteString("clientId: \"" + e.clientId +"\", ")
+	sb.WriteString("type:\"" + e.packetType.String() + "\", ")
+	sb.WriteString("messageId: \"" + strconv.Itoa(int(e.messageId)) + "\", ")
+	sb.WriteString("topic: \"" + e.topic + "\", ")
+	sb.WriteString("payload: \"" + e.payload + "\", ")
+	sb.WriteString("qos: " + strconv.Itoa(e.qos) + ", ")
+	sb.WriteString("retain: " + strconv.FormatBool(e.retain) + ", ")
+	sb.WriteString("dublicate: " + strconv.FormatBool(e.dublicate) + "}")
 
 	return sb.String()
 }
