@@ -144,9 +144,6 @@ func (e *Engine) manageClients() {
 				установленном флаге переменный заголовок должен содержать Message ID (идентификатор
 				сообщения)
 
-				QoS 0 At most once. На этом уровне издатель один раз отправляет сообщение брокеру и не ждет
-				подтверждения от него, то есть отправил и забыл.
-
 				QoS 1 At least once. Этот уровень гарантирует, что сообщение точно будет доставлено брокеру,
 				но есть вероятность дублирования сообщений от издателя. После получения дубликата сообщения,
 				брокер снова рассылает это сообщение подписчикам, а издателю снова отправляет подтверждение
@@ -165,17 +162,20 @@ func (e *Engine) manageClients() {
 				он должен хранить копию сообщения у себя. После получения PUBREL он удаляет копию сообщения
 				и отправляет издателю сообщение PUBCOMP о том, что транзакция завершена.
 			*/
-			client := e.clients[event.clientId]
-			res := Event{
-				packetType: packet.PUBLISH,
-				messageId:  event.messageId,
-				topic:      event.topic,
-				payload:    event.payload,
-				qos:        event.qos,
-				retain:     event.retain,
-				dublicate:  event.dublicate,
+
+			for _, client := range e.clients {
+				if client != nil && client.isSubscribed(event.topic.name) {
+					res := Event{
+						packetType: packet.PUBLISH,
+						messageId:  event.messageId,
+						topic:      event.topic,
+						payload:    event.payload,
+						retain:     event.retain,
+						dublicate:  event.dublicate,
+					}
+					client.channel <- res
+				}
 			}
-			client.channel <- res
 		case packet.PUBACK:
 			break
 		case packet.PUBREC:

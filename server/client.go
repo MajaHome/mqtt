@@ -4,20 +4,20 @@ import (
 	"log"
 	"mqtt/packet"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 )
 
 type Client struct {
-	conn    net.Conn
-	engine  chan Event
-	channel chan Event
-
-	id      string
-	session bool
-	topics  []string // subscribed topics
-
-	willQoS    packet.QoS
-	willRerail bool
+	conn         net.Conn
+	engine       chan Event
+	channel      chan Event
+	id           string
+	session      bool
+	subscription []EventTopic // subscribed topics
+	willQoS      packet.QoS
+	willRetain   bool
 }
 
 func NewClient(id string, conn net.Conn, session bool, engine chan Event) *Client {
@@ -28,7 +28,7 @@ func NewClient(id string, conn net.Conn, session bool, engine chan Event) *Clien
 		engine:  engine,
 		channel: channel,
 		id:      id,
-		session:  session,
+		session: session,
 	}
 }
 
@@ -43,9 +43,9 @@ func (c *Client) Start(server *Server) {
 
 			res := packet.NewPublish()
 			res.Id = e.messageId
-			res.Topic = e.topic
+			res.Topic = e.topic.name
+			res.QoS = packet.QoS(e.topic.qos)
 			res.Payload = e.payload
-			res.QoS = packet.QoS(e.qos)
 			res.Retain = e.retain
 			res.DUP = e.dublicate
 
@@ -91,16 +91,17 @@ func (c *Client) Start(server *Server) {
 			res.Id = req.Id
 			var qos []packet.QoS
 			for _, topic := range req.Topics {
+				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
 				event := Event{
 					clientId:   c.id,
 					packetType: pkt.Type(),
 					messageId:  req.Id,
-					topic:      topic.Topic,
-					qos:        topic.QoS.Int(),
+					topic:      t,
 				}
 				c.engine <- event
-				// actually it must receive answer (qos) from engine in case of success subscribtion, otherwise send 0x80 as qos
-				qos = append(qos, topic.QoS)
+
+				tqos := c.addSubscribtion(t)
+				qos = append(qos, tqos)
 			}
 			res.ReturnCodes = qos
 
@@ -110,32 +111,35 @@ func (c *Client) Start(server *Server) {
 			res := packet.NewUnSubAck()
 
 			res.Id = req.Id
-			for _, t := range req.Topics {
+			for _, topic := range req.Topics {
+				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
 				event := &Event{
 					clientId:   c.id,
 					packetType: pkt.Type(),
 					messageId:  req.Id,
-					topic:      t.Topic,
-					qos:        t.QoS.Int(),
+					topic:      t,
 				}
 				c.engine <- *event
 
+				c.removeSubscription(t)
 				err = server.WritePacket(c.conn, res)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-				messageId:  req.Id,
-				topic:      req.Topic,
-				payload:    req.Payload,
-				qos:        req.QoS.Int(),
-				retain:     req.Retain,
-				dublicate:  req.DUP,
+			// do not publish on "special" topics
+			if !strings.HasPrefix(req.Topic, "$") {
+				event := &Event{
+					clientId:   c.id,
+					packetType: pkt.Type(),
+					messageId:  req.Id,
+					topic:      EventTopic{name: strings.Trim(req.Topic, "/"), qos: req.QoS.Int()},
+					payload:    req.Payload,
+					retain:     req.Retain,
+					dublicate:  req.DUP,
+				}
+				c.engine <- *event
 			}
-			c.engine <- *event
 
 			switch req.QoS {
 			case packet.AtLeastOnce:
@@ -145,14 +149,10 @@ func (c *Client) Start(server *Server) {
 			case packet.ExactlyOnce:
 				res := packet.NewPubRec()
 				res.Id = req.Id
-				// read response from engine - if packet with id is registered
 				err = server.WritePacket(c.conn, res)
 			}
 		case packet.PUBREC:
 			req := pkt.(*packet.PubRecPacket)
-			res := packet.NewPubRel()
-			res.Id = req.Id
-			// read response from engine - if packet with id is registered
 
 			event := &Event{
 				clientId:   c.id,
@@ -160,13 +160,14 @@ func (c *Client) Start(server *Server) {
 				messageId:  req.Id,
 			}
 			c.engine <- *event
+
+			// TODO read response from engine - if packet with id is registered
+			res := packet.NewPubRel()
+			res.Id = req.Id
 
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBREL:
 			req := pkt.(*packet.PubRelPacket)
-			res := packet.NewPubComp()
-			res.Id = req.Id
-			// read response from engine - if packet with id is registered
 
 			event := &Event{
 				clientId:   c.id,
@@ -174,6 +175,10 @@ func (c *Client) Start(server *Server) {
 				messageId:  req.Id,
 			}
 			c.engine <- *event
+
+			// TODO read response from engine - if packet with id is registered
+			res := packet.NewPubComp()
+			res.Id = req.Id
 
 			err = server.WritePacket(c.conn, res)
 		case packet.PUBACK:
@@ -213,5 +218,64 @@ func (c *Client) Start(server *Server) {
 
 func (c *Client) saveWill(qos packet.QoS, retain bool) {
 	c.willQoS = qos
-	c.willRerail = retain
+	c.willRetain = retain
+}
+
+func (c *Client) addSubscribtion(t EventTopic) packet.QoS {
+	// check for duplicate
+	for _, v := range c.subscription {
+		if v.name == t.name {
+			if v.qos != t.qos {
+				v.qos = t.qos
+			}
+			return packet.QoS(v.qos)
+		}
+	}
+	c.subscription = append(c.subscription, t)
+	return packet.QoS(t.qos)
+}
+
+func (c *Client) removeSubscription(t EventTopic) bool {
+	if len(c.subscription) == 0 {
+		return false
+	}
+	if len(c.subscription) == 1 {
+		c.subscription = []EventTopic{}
+		return true
+	}
+	for i, v := range c.subscription {
+		if v.name == t.name {
+			if len(c.subscription) > i+1 {
+				c.subscription[i] = c.subscription[len(c.subscription)-1]
+			}
+			c.subscription = c.subscription[:len(c.subscription)-1]
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) isSubscribed(topic string) bool {
+	for _, v := range c.subscription {
+		if v.name == topic {
+			return true
+		}
+	}
+	return true
+}
+
+func (c *Client) String() string {
+	var sb strings.Builder
+	sb.WriteString("client {")
+	sb.WriteString("id: \"" + c.id + "\", ")
+	sb.WriteString("session: " + strconv.FormatBool(c.session) + ", ")
+	sb.WriteString("willQoS: " + strconv.Itoa(int(c.willQoS)) + ", ")
+	sb.WriteString("willRetain: " + strconv.FormatBool(c.willRetain) + ", ")
+	sb.WriteString("subscription: [")
+	for _, v := range c.subscription {
+		sb.WriteString("{ name: \"" + v.name + "\", qos: " + strconv.Itoa(int(v.qos)) + "}")
+	}
+	sb.WriteString("]")
+	sb.WriteString("}")
+	return sb.String()
 }
