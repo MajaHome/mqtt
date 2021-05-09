@@ -53,7 +53,7 @@ func (sack *SubAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(SUBACK) << 4
-	buf[1] = byte(sack.Length()) // Size
+	buf[1] = byte(sack.Length())
 	binary.BigEndian.PutUint16(buf[2:], sack.Id)
 
 	for _, rc := range sack.ReturnCodes {

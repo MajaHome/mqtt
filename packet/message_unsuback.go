@@ -1,9 +1,13 @@
 package packet
 
-import ()
+import (
+	"encoding/binary"
+	"strconv"
+)
 
 type UnSubAckPacket struct {
 	Header []byte
+	Id     uint16
 }
 
 func NewUnSubAck() *UnSubAckPacket {
@@ -25,13 +29,27 @@ func (uack *UnSubAckPacket) Length() int {
 }
 
 func (uack *UnSubAckPacket) Unpack(buf []byte) error {
+	var offset int = 0
+
+	id, offset, err := ReadInt16(buf, offset)
+	if err != nil {
+		return err
+	}
+	uack.Id = id
+
 	return nil
 }
 
 func (uack *UnSubAckPacket) Pack() []byte {
-	return nil
+	buf := make([]byte, 4)
+
+	buf[0] = byte(UNSUBACK) << 4
+	buf[1] = byte(uack.Length())
+	binary.BigEndian.PutUint16(buf[2:], uack.Id)
+
+	return buf
 }
 
 func (uack *UnSubAckPacket) String() string {
-	return "Message UnSubAck: {}"
+	return "Message UnSubAck: { id=" + strconv.Itoa(int(uack.Id)) + "}"
 }

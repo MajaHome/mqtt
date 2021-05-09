@@ -85,17 +85,16 @@ func (e Engine) Process(server *Server) {
 				if res.ReturnCode == uint8(packet.ConnectAccepted) {
 					if !cp.CleanSession && e.clients[cp.ClientID] != nil {
 						res.Session = !cp.CleanSession
-						client = e.saveClient(cp.ClientID, conn)
-						if cp.Will != nil {
-							client.saveWill(cp.Will.QoS, cp.Will.Retain)
-						}
 					} else {
 						res.Session = false
-						client = e.saveClient(cp.ClientID, conn)
+					}
+					client = e.saveClient(cp.ClientID, conn, res.Session)
+					if cp.Will != nil && res.Session {
+						client.saveWill(cp.Will.QoS, cp.Will.Retain)
 					}
 				}
 
-				err := server.WritePacket(conn, res)
+				err = server.WritePacket(conn, res)
 				if err != nil {
 					log.Println("err write packet", err.Error())
 					conn.Close()
@@ -125,17 +124,83 @@ func (e *Engine) manageClients() {
 		log.Println("engine " + event.String())
 
 		switch event.packetType {
+		case packet.DISCONNECT:
+			client := e.clients[event.clientId]
+			if !client.session {
+				delete(e.clients, event.clientId)
+			}
+			break
+		case packet.SUBSCRIBE:
+			break
+		case packet.UNSUBSCRIBE:
+			break
 		case packet.PUBLISH:
-			//client := e.clients[event.clientId]
-			//client.channel <- "ok"
+			/*
+				RETAIN – при публикации данных с установленным флагом retain, брокер сохранит его. При
+				следующей подписке на этот топик брокер незамедлительно отправит сообщение с этим флагом.
+
+				DUP – флаг дубликата устанавливается, когда клиент или MQTT брокер совершает повторную
+				отправку пакета (используется в типах PUBLISH, SUBSCRIBE, UNSUBSCRIBE, PUBREL). При
+				установленном флаге переменный заголовок должен содержать Message ID (идентификатор
+				сообщения)
+
+				QoS 0 At most once. На этом уровне издатель один раз отправляет сообщение брокеру и не ждет
+				подтверждения от него, то есть отправил и забыл.
+
+				QoS 1 At least once. Этот уровень гарантирует, что сообщение точно будет доставлено брокеру,
+				но есть вероятность дублирования сообщений от издателя. После получения дубликата сообщения,
+				брокер снова рассылает это сообщение подписчикам, а издателю снова отправляет подтверждение
+				о получении сообщения. Если издатель не получил PUBACK сообщения от брокера, он повторно
+				отправляет этот пакет, при этом в DUP устанавливается «1».
+				PUBLISH -> PUBACK
+
+				QoS 2 Exactly once. На этом уровне гарантируется доставка сообщений подписчику и исключается
+				возможное дублирование отправленных сообщений.
+				PUBLISH ->PUBREC, PUBREL - PUBCOMP
+
+				Издатель отправляет сообщение брокеру. В этом сообщении указывается уникальный Packet ID,
+				QoS=2 и DUP=0. Издатель хранит сообщение неподтвержденным пока не получит от брокера ответ
+				PUBREC. Брокер отвечает сообщением PUBREC в котором содержится тот же Packet ID. После его
+				получения издатель отправляет PUBREL с тем же Packet ID. До того, как брокер получит PUBREL
+				он должен хранить копию сообщения у себя. После получения PUBREL он удаляет копию сообщения
+				и отправляет издателю сообщение PUBCOMP о том, что транзакция завершена.
+			*/
+			client := e.clients[event.clientId]
+			res := Event{
+				packetType: packet.PUBLISH,
+				messageId:  event.messageId,
+				topic:      event.topic,
+				payload:    event.payload,
+				qos:        event.qos,
+				retain:     event.retain,
+				dublicate:  event.dublicate,
+			}
+			client.channel <- res
+		case packet.PUBACK:
+			break
+		case packet.PUBREC:
+			break
+		case packet.PUBREL:
+			break
+		case packet.PUBCOMP:
+			break
 		default:
+			// unexpected disconnect, send will message
+
+			/*
+				Will Flag - при установленном флаге, после того, как клиент отключится от брокера без отправки команды DISCONNECT
+				(в случаях непредсказуемого обрыва связи и т.д.), брокер оповестит об этом всех подключенных к нему клиентов через
+				так называемый Will Message.
+			*/
+
+			break
 		}
 	}
 
 	log.Println("closed communication channel")
 }
 
-func (e *Engine) saveClient(id string, conn net.Conn) *Client {
+func (e *Engine) saveClient(id string, conn net.Conn, session bool) *Client {
 	var cid string
 	if id == "" {
 		// generate temporary ident
@@ -149,7 +214,7 @@ func (e *Engine) saveClient(id string, conn net.Conn) *Client {
 	if e.clients[id] != nil {
 		e.clients[id].conn = conn
 	} else {
-		client := NewClient(cid, conn, e.channel)
+		client := NewClient(cid, conn, session, e.channel)
 		e.clients[id] = client
 	}
 

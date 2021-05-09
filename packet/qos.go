@@ -8,7 +8,7 @@ import (
 var ErrInvalidQos = errors.New("invalid qos")
 
 const (
-	AtMostOnce QoS = 0x00
+	AtMostOnce  QoS = 0x00
 	AtLeastOnce QoS = 0x01
 	ExactlyOnce QoS = 0x02
 )

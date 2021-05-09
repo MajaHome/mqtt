@@ -1,7 +1,6 @@
 package server
 
 import (
-	"io"
 	"log"
 	"mqtt/packet"
 	"net"
@@ -11,34 +10,56 @@ import (
 type Client struct {
 	conn    net.Conn
 	engine  chan Event
-	channel chan string
+	channel chan Event
 
-	id     string
-	Topics []string // subscribed topics
+	id      string
+	session bool
+	topics  []string // subscribed topics
 
 	willQoS    packet.QoS
 	willRerail bool
 }
 
-func NewClient(id string, conn net.Conn, engine chan Event) *Client {
-	channel := make(chan string)
+func NewClient(id string, conn net.Conn, session bool, engine chan Event) *Client {
+	channel := make(chan Event)
 
 	return &Client{
 		conn:    conn,
 		engine:  engine,
 		channel: channel,
 		id:      id,
+		session:  session,
 	}
 }
 
 func (c *Client) Start(server *Server) {
 	for {
-		c.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 10000))
+		c.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		pkt, _ := server.ReadPacket(c.conn)
 
 		select {
-		case msg := <-c.channel:
-			log.Println("client: " + msg)
+		case e := <-c.channel:
+			log.Println("client: " + e.String())
+
+			res := packet.NewPublish()
+			res.Id = e.messageId
+			res.Topic = e.topic
+			res.Payload = e.payload
+			res.QoS = packet.QoS(e.qos)
+			res.Retain = e.retain
+			res.DUP = e.dublicate
+
+			if err := server.WritePacket(c.conn, res); err != nil {
+				log.Println("client disconnect while write from engine")
+				c.conn.Close()
+
+				// send to engine unexpected disconnect
+				event := Event{clientId: c.id}
+				c.engine <- event
+
+				return
+			}
+			continue
 		default:
 			break
 		}
@@ -78,57 +99,31 @@ func (c *Client) Start(server *Server) {
 					qos:        topic.QoS.Int(),
 				}
 				c.engine <- event
+				// actually it must receive answer (qos) from engine in case of success subscribtion, otherwise send 0x80 as qos
 				qos = append(qos, topic.QoS)
 			}
 			res.ReturnCodes = qos
 
 			err = server.WritePacket(c.conn, res)
 		case packet.UNSUBSCRIBE:
-			//req := pkt.(*packet.UnSubscriibePacket)
+			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-			}
-			c.engine <- *event
+			res.Id = req.Id
+			for _, t := range req.Topics {
+				event := &Event{
+					clientId:   c.id,
+					packetType: pkt.Type(),
+					messageId:  req.Id,
+					topic:      t.Topic,
+					qos:        t.QoS.Int(),
+				}
+				c.engine <- *event
 
-			err = server.WritePacket(c.conn, res)
+				err = server.WritePacket(c.conn, res)
+			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
-
-			/*
-				RETAIN – при публикации данных с установленным флагом retain, брокер сохранит его. При
-				следующей подписке на этот топик брокер незамедлительно отправит сообщение с этим флагом.
-
-				DUP – флаг дубликата устанавливается, когда клиент или MQTT брокер совершает повторную
-				отправку пакета (используется в типах PUBLISH, SUBSCRIBE, UNSUBSCRIBE, PUBREL). При
-				установленном флаге переменный заголовок должен содержать Message ID (идентификатор
-				сообщения)
-
-				QoS 0 At most once. На этом уровне издатель один раз отправляет сообщение брокеру и не ждет
-				подтверждения от него, то есть отправил и забыл.
-
-				QoS 1 At least once. Этот уровень гарантирует, что сообщение точно будет доставлено брокеру,
-				но есть вероятность дублирования сообщений от издателя. После получения дубликата сообщения,
-				брокер снова рассылает это сообщение подписчикам, а издателю снова отправляет подтверждение
-				о получении сообщения. Если издатель не получил PUBACK сообщения от брокера, он повторно
-				отправляет этот пакет, при этом в DUP устанавливается «1».
-				PUBLISH -> PUBACK
-
-				QoS 2 Exactly once. На этом уровне гарантируется доставка сообщений подписчику и исключается
-				возможное дублирование отправленных сообщений.
-				PUBLISH ->PUBREC, PUBREL - PUBCOMP
-
-				Издатель отправляет сообщение брокеру. В этом сообщении указывается уникальный Packet ID,
-				QoS=2 и DUP=0. Издатель хранит сообщение неподтвержденным пока не получит от брокера ответ
-				PUBREC. Брокер отвечает сообщением PUBREC в котором содержится тот же Packet ID. После его
-				получения издатель отправляет PUBREL с тем же Packet ID. До того, как брокер получит PUBREL
-				он должен хранить копию сообщения у себя. После получения PUBREL он удаляет копию сообщения
-				и отправляет издателю сообщение PUBCOMP о том, что транзакция завершена.
-			*/
-
-			// if payload is empty - unsubscribe to the topic
 
 			event := &Event{
 				clientId:   c.id,
@@ -153,6 +148,20 @@ func (c *Client) Start(server *Server) {
 				// read response from engine - if packet with id is registered
 				err = server.WritePacket(c.conn, res)
 			}
+		case packet.PUBREC:
+			req := pkt.(*packet.PubRecPacket)
+			res := packet.NewPubRel()
+			res.Id = req.Id
+			// read response from engine - if packet with id is registered
+
+			event := &Event{
+				clientId:   c.id,
+				packetType: pkt.Type(),
+				messageId:  req.Id,
+			}
+			c.engine <- *event
+
+			err = server.WritePacket(c.conn, res)
 		case packet.PUBREL:
 			req := pkt.(*packet.PubRelPacket)
 			res := packet.NewPubComp()
@@ -167,25 +176,37 @@ func (c *Client) Start(server *Server) {
 			c.engine <- *event
 
 			err = server.WritePacket(c.conn, res)
+		case packet.PUBACK:
+			req := pkt.(*packet.PubAckPacket)
+
+			event := &Event{
+				clientId:   c.id,
+				packetType: pkt.Type(),
+				messageId:  req.Id,
+			}
+			c.engine <- *event
+		case packet.PUBCOMP:
+			req := pkt.(*packet.PubCompPacket)
+
+			event := &Event{
+				clientId:   c.id,
+				packetType: pkt.Type(),
+				messageId:  req.Id,
+			}
+			c.engine <- *event
 		default:
 			err = packet.ErrUnknownPacket
 		}
 
 		if err != nil {
-			if err == io.EOF {
-				// normal disconnect
-				/*
-					Will Flag - при установленном флаге, после того, как клиент отключится от брокера без отправки команды DISCONNECT
-					(в случаях непредсказуемого обрыва связи и т.д.), брокер оповестит об этом всех подключенных к нему клиентов через
-					так называемый Will Message.
-				*/
-			} else {
-				log.Println("err serve: ", err.Error())
-			}
-
-			log.Println("client disconnect")
+			log.Println("err serve, disconnected: ", err.Error())
 			c.conn.Close()
-			break
+
+			// send to engine unexpected disconnect
+			event := Event{clientId: c.id}
+			c.engine <- event
+
+			return
 		}
 	}
 }
