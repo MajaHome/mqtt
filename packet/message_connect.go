@@ -1,6 +1,7 @@
 package packet
 
 import (
+	"log"
 	"strconv"
 )
 
@@ -80,8 +81,15 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	}
 
 	willFlag := ((flag >> 2) & 0x1) == 1
+	if willFlag {
+		log.Println("will!")
+	}
 	willRetain := ((flag >> 5) & 0x1) == 1
+	if willRetain {
+		log.Println("will retain!")
+	}
 	willQoS := QoS((flag >> 3) & 0x3)
+	log.Println("willQos", willQoS.String())
 
 	if !willQoS.Valid() {
 		return ErrUnknownPacket
@@ -90,20 +98,37 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 		return ErrUnknownPacket
 	}
 
-	if willFlag {
-		c.Will = &Message{
-			QoS:       willQoS,
-			Retain:    willRetain,
-			Dublicate: false,
-			Flag:      false,
-		}
-	}
-
 	c.CleanSession = ((flag >> 1) & 0x1) == 1
 
 	c.KeepAlive, offset, err = ReadInt16(buf, offset)
 	if err != nil {
 		return err
+	}
+
+	if willFlag {
+		var willTopicLen, willMessageLen uint16
+		var willTopic, willMessage string
+
+		willTopicLen, offset, err = ReadInt16(buf, offset)
+		if err != nil {
+			return err
+		}
+		willTopic, offset, err = ReadString(buf, offset, int(willTopicLen))
+
+		willMessageLen, offset, err = ReadInt16(buf, offset)
+		if err != nil {
+			return err
+		}
+		willMessage, offset, err = ReadString(buf, offset, int(willMessageLen))
+
+		c.Will = &Message{
+			QoS:		willQoS,
+			Retain:		willRetain,
+			Topic:		willTopic,
+			Payload:	willMessage,
+			Dublicate:	false,
+			Flag:		false,
+		}
 	}
 
 	clidLen, offset, err := ReadInt16(buf, offset)
@@ -201,6 +226,15 @@ func (c *ConnPacket) Pack() []byte {
 	offset = WriteInt8(buf, offset, flag)
 
 	offset = WriteInt16(buf, offset, c.KeepAlive)
+
+	if c.Will != nil {
+		offset = WriteInt16(buf, offset, uint16(len(c.Will.Topic)))
+		copy(buf[offset:], c.Will.Topic)
+
+		offset = WriteInt16(buf, offset, uint16(len(c.Will.Payload)))
+		copy(buf[offset:], c.Will.Payload)
+	}
+
 	offset = WriteInt16(buf, offset, uint16(len(c.ClientID)))
 	copy(buf[offset:], c.ClientID)
 

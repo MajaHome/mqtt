@@ -4,5 +4,3 @@
 *.crt
 *.key
 *.db
-server.crt
-server.key
