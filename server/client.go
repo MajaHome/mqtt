@@ -42,45 +42,51 @@ func (c *Client) Start(server *Server) {
 		}
 
 		// read from channel and/or from network
-		select {
-		case e := <-c.clientChan:
-			log.Println("client receive message: " + e.String())
+		go func() {
+			for e := range c.clientChan {
+				log.Println("client receive message: " + e.String())
 
-			var res packet.Packet
-			switch e.packetType {
-			case packet.PUBLISH:
-				res = packet.NewPublish()
-				res.(*packet.PublishPacket).Id = e.messageId
-				res.(*packet.PublishPacket).Topic = e.topic.name
-				res.(*packet.PublishPacket).QoS = packet.QoS(e.topic.qos)
-				res.(*packet.PublishPacket).Payload = e.payload
-				res.(*packet.PublishPacket).Retain = e.retain
-				res.(*packet.PublishPacket).DUP = e.dublicate
-			case packet.PUBACK:
-				res = packet.NewPubAck()
-				res.(*packet.PubAckPacket).Id = e.messageId
-			case packet.PUBREC:
-				res = packet.NewPubRec()
-				res.(*packet.PubRecPacket).Id = e.messageId
-			case packet.PUBCOMP:
-				res = packet.NewPubComp()
-				res.(*packet.PubCompPacket).Id = e.messageId
-			default:
-				log.Println("wrong packet from engine")
-				continue
-			}
+				var res packet.Packet
+				switch e.packetType {
+				case packet.PUBLISH:
+					res = packet.NewPublish()
+					res.(*packet.PublishPacket).Id = e.messageId
+					res.(*packet.PublishPacket).Topic = e.topic.name
+					res.(*packet.PublishPacket).QoS = packet.QoS(e.topic.qos)
+					res.(*packet.PublishPacket).Payload = e.payload
+					res.(*packet.PublishPacket).Retain = e.retain
+					res.(*packet.PublishPacket).DUP = e.dublicate
+				case packet.PUBACK:
+					res = packet.NewPubAck()
+					res.(*packet.PubAckPacket).Id = e.messageId
+				case packet.PUBREC:
+					res = packet.NewPubRec()
+					res.(*packet.PubRecPacket).Id = e.messageId
+				case packet.PUBCOMP:
+					res = packet.NewPubComp()
+					res.(*packet.PubCompPacket).Id = e.messageId
+				default:
+					log.Println("wrong packet from engine")
+				}
 
-			if err := server.WritePacket(c.conn, res); err != nil {
-				log.Println("client disconnect while write to socket")
-				c.Stop()
-				c.engineChan <- &Event{clientId: c.clientId} // send to engine unexpected disconnect
-				return
+				if err := server.WritePacket(c.conn, res); err != nil {
+					log.Println("client disconnect while write to socket")
+					c.Stop()
+					c.engineChan <- &Event{clientId: c.clientId} // send to engine unexpected disconnect
+					return
+				}
 			}
-			continue
-		default:
-			if pkt, _ = server.ReadPacket(c.conn); pkt == nil {
-				continue
-			}
+		}()
+
+		if pkt, err = server.ReadPacket(c.conn); err != nil {
+			log.Println("err read packet, disconnected: ", err.Error())
+			c.Stop()
+
+			// send to engineChan unexpected disconnect
+			event := &Event{clientId: c.clientId}
+			c.engineChan <- event
+
+			return
 		}
 
 		switch pkt.Type() {
