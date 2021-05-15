@@ -6,105 +6,109 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Client struct {
 	conn         net.Conn
-	engine       chan Event
-	channel      chan Event
-	id           string
-	session      bool
+	engineChan   chan *Event
+	clientChan   chan *Event
+	clientId     string
+	session      bool         // clean or persisten session
 	subscription []EventTopic // subscribed topics
-	willQoS      packet.QoS
-	willRetain   bool
+	will         *packet.Message
+	stop         bool // flag to stop
 }
 
-func NewClient(id string, conn net.Conn, session bool, engine chan Event) *Client {
-	channel := make(chan Event)
-
+func NewClient(id string, conn net.Conn, session bool, channel chan *Event) *Client {
 	return &Client{
-		conn:    conn,
-		engine:  engine,
-		channel: channel,
-		id:      id,
-		session: session,
+		conn:       conn,
+		engineChan: channel,
+		clientChan: make(chan *Event),
+		clientId:   id,
+		session:    session,
 	}
 }
 
 func (c *Client) Start(server *Server) {
+	var pkt packet.Packet
+	var err error
+
+	c.stop = false
 	for {
-		c.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		pkt, _ := server.ReadPacket(c.conn)
+		//log.Println("thread for " + c.clientId)
+		if c.stop {
+			log.Println("stop " + c.clientId)
+			return
+		}
 
+		// read from channel and/or from network
 		select {
-		case e := <-c.channel:
-			log.Println("client: " + e.String())
+		case e := <-c.clientChan:
+			log.Println("client receive message: " + e.String())
 
-			res := packet.NewPublish()
-			res.Id = e.messageId
-			res.Topic = e.topic.name
-			res.QoS = packet.QoS(e.topic.qos)
-			res.Payload = e.payload
-			res.Retain = e.retain
-			res.DUP = e.dublicate
+			var res packet.Packet
+			switch e.packetType {
+			case packet.PUBLISH:
+				res = packet.NewPublish()
+				res.(*packet.PublishPacket).Id = e.messageId
+				res.(*packet.PublishPacket).Topic = e.topic.name
+				res.(*packet.PublishPacket).QoS = packet.QoS(e.topic.qos)
+				res.(*packet.PublishPacket).Payload = e.payload
+				res.(*packet.PublishPacket).Retain = e.retain
+				res.(*packet.PublishPacket).DUP = e.dublicate
+			case packet.PUBACK:
+				res = packet.NewPubAck()
+				res.(*packet.PubAckPacket).Id = e.messageId
+			case packet.PUBREC:
+				res = packet.NewPubRec()
+				res.(*packet.PubRecPacket).Id = e.messageId
+			case packet.PUBCOMP:
+				res = packet.NewPubComp()
+				res.(*packet.PubCompPacket).Id = e.messageId
+			default:
+				log.Println("wrong packet from engine")
+				continue
+			}
 
 			if err := server.WritePacket(c.conn, res); err != nil {
-				log.Println("client disconnect while write from engine")
-				c.conn.Close()
-
-				// send to engine unexpected disconnect
-				event := Event{clientId: c.id}
-				c.engine <- event
-
+				log.Println("client disconnect while write to socket")
+				c.Stop()
+				c.engineChan <- &Event{clientId: c.clientId} // send to engine unexpected disconnect
 				return
 			}
 			continue
 		default:
-			break
+			if pkt, _ = server.ReadPacket(c.conn); pkt == nil {
+				continue
+			}
 		}
 
-		if pkt == nil {
-			continue
-		}
-
-		var err error
 		switch pkt.Type() {
 		case packet.DISCONNECT:
 			res := packet.NewDisconnect()
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-			}
-			c.engine <- *event
+			event := &Event{clientId: c.clientId, packetType: pkt.Type()}
+			c.engineChan <- event
 
 			err = server.WritePacket(c.conn, res)
 		case packet.PING:
 			res := packet.NewPong()
-
 			err = server.WritePacket(c.conn, res)
 		case packet.SUBSCRIBE:
 			req := pkt.(*packet.SubscribePacket)
-			res := packet.NewSubAck()
 
-			res.Id = req.Id
 			var qos []packet.QoS
 			for _, topic := range req.Topics {
 				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
-				event := Event{
-					clientId:   c.id,
-					packetType: pkt.Type(),
-					messageId:  req.Id,
-					topic:      t,
-				}
-				c.engine <- event
+				qos = append(qos, c.addSubscribtion(t))
 
-				tqos := c.addSubscribtion(t)
-				qos = append(qos, tqos)
+				event := &Event{clientId: c.clientId, packetType: pkt.Type(), topic: t}
+				c.engineChan <- event
 			}
-			res.ReturnCodes = qos
 
+			res := packet.NewSubAck()
+			res.Id = req.Id
+			res.ReturnCodes = qos
 			err = server.WritePacket(c.conn, res)
 		case packet.UNSUBSCRIBE:
 			req := pkt.(*packet.UnSubscribePacket)
@@ -113,115 +117,66 @@ func (c *Client) Start(server *Server) {
 			res.Id = req.Id
 			for _, topic := range req.Topics {
 				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
-				event := &Event{
-					clientId:   c.id,
-					packetType: pkt.Type(),
-					messageId:  req.Id,
-					topic:      t,
-				}
-				c.engine <- *event
-
 				c.removeSubscription(t)
 				err = server.WritePacket(c.conn, res)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
-
-			// do not publish on "special" topics
-			if !strings.HasPrefix(req.Topic, "$") {
-				event := &Event{
-					clientId:   c.id,
-					packetType: pkt.Type(),
-					messageId:  req.Id,
-					topic:      EventTopic{name: strings.Trim(req.Topic, "/"), qos: req.QoS.Int()},
-					payload:    req.Payload,
-					retain:     req.Retain,
-					dublicate:  req.DUP,
-				}
-				c.engine <- *event
+			event := &Event{
+				clientId:   c.clientId,
+				packetType: pkt.Type(),
+				messageId:  req.Id,
+				topic:      EventTopic{name: strings.Trim(req.Topic, "/")},
+				payload:    req.Payload,
+				qos:        req.QoS.Int(),
+				retain:     req.Retain,
+				dublicate:  req.DUP,
 			}
-
-			switch req.QoS {
-			case packet.AtLeastOnce:
-				res := packet.NewPubAck()
-				res.Id = req.Id
-				err = server.WritePacket(c.conn, res)
-			case packet.ExactlyOnce:
-				res := packet.NewPubRec()
-				res.Id = req.Id
-				err = server.WritePacket(c.conn, res)
-			}
+			c.engineChan <- event
 		case packet.PUBREC:
 			req := pkt.(*packet.PubRecPacket)
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-				messageId:  req.Id,
-			}
-			c.engine <- *event
-
-			// TODO read response from engine - if packet with id is registered
-			res := packet.NewPubRel()
-			res.Id = req.Id
-
-			err = server.WritePacket(c.conn, res)
+			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			c.engineChan <- event
 		case packet.PUBREL:
 			req := pkt.(*packet.PubRelPacket)
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-				messageId:  req.Id,
-			}
-			c.engine <- *event
-
-			// TODO read response from engine - if packet with id is registered
-			res := packet.NewPubComp()
-			res.Id = req.Id
-
-			err = server.WritePacket(c.conn, res)
+			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			c.engineChan <- event
 		case packet.PUBACK:
 			req := pkt.(*packet.PubAckPacket)
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-				messageId:  req.Id,
-			}
-			c.engine <- *event
+			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			c.engineChan <- event
 		case packet.PUBCOMP:
 			req := pkt.(*packet.PubCompPacket)
 
-			event := &Event{
-				clientId:   c.id,
-				packetType: pkt.Type(),
-				messageId:  req.Id,
-			}
-			c.engine <- *event
+			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			c.engineChan <- event
 		default:
 			err = packet.ErrUnknownPacket
 		}
 
 		if err != nil {
 			log.Println("err serve, disconnected: ", err.Error())
-			c.conn.Close()
+			c.Stop()
 
-			// send to engine unexpected disconnect
-			event := Event{clientId: c.id}
-			c.engine <- event
+			// send to engineChan unexpected disconnect
+			event := &Event{clientId: c.clientId}
+			c.engineChan <- event
 
 			return
 		}
 	}
 }
 
-func (c *Client) saveWill(qos packet.QoS, retain bool) {
-	c.willQoS = qos
-	c.willRetain = retain
+func (c *Client) Stop() {
+	c.stop = true
+	c.conn.Close()
 }
 
 func (c *Client) addSubscribtion(t EventTopic) packet.QoS {
+	// 0x80 clientChan qos clientChan case of error ?
 	// check for duplicate
 	for _, v := range c.subscription {
 		if v.name == t.name {
@@ -267,10 +222,11 @@ func (c *Client) isSubscribed(topic string) bool {
 func (c *Client) String() string {
 	var sb strings.Builder
 	sb.WriteString("client {")
-	sb.WriteString("id: \"" + c.id + "\", ")
+	sb.WriteString("clientId: \"" + c.clientId + "\", ")
 	sb.WriteString("session: " + strconv.FormatBool(c.session) + ", ")
-	sb.WriteString("willQoS: " + strconv.Itoa(int(c.willQoS)) + ", ")
-	sb.WriteString("willRetain: " + strconv.FormatBool(c.willRetain) + ", ")
+	if c.will != nil {
+		sb.WriteString("will: " + c.will.String() + ", ")
+	}
 	sb.WriteString("subscription: [")
 	for _, v := range c.subscription {
 		sb.WriteString("{ name: \"" + v.name + "\", qos: " + strconv.Itoa(int(v.qos)) + "}")

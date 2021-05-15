@@ -3,6 +3,7 @@ package packet
 import (
 	"log"
 	"strconv"
+	"strings"
 )
 
 type ConnPacket struct {
@@ -81,15 +82,8 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	}
 
 	willFlag := ((flag >> 2) & 0x1) == 1
-	if willFlag {
-		log.Println("will!")
-	}
 	willRetain := ((flag >> 5) & 0x1) == 1
-	if willRetain {
-		log.Println("will retain!")
-	}
 	willQoS := QoS((flag >> 3) & 0x3)
-	log.Println("willQos", willQoS.String())
 
 	if !willQoS.Valid() {
 		return ErrUnknownPacket
@@ -103,32 +97,6 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	c.KeepAlive, offset, err = ReadInt16(buf, offset)
 	if err != nil {
 		return err
-	}
-
-	if willFlag {
-		var willTopicLen, willMessageLen uint16
-		var willTopic, willMessage string
-
-		willTopicLen, offset, err = ReadInt16(buf, offset)
-		if err != nil {
-			return err
-		}
-		willTopic, offset, err = ReadString(buf, offset, int(willTopicLen))
-
-		willMessageLen, offset, err = ReadInt16(buf, offset)
-		if err != nil {
-			return err
-		}
-		willMessage, offset, err = ReadString(buf, offset, int(willMessageLen))
-
-		c.Will = &Message{
-			QoS:		willQoS,
-			Retain:		willRetain,
-			Topic:		willTopic,
-			Payload:	willMessage,
-			Dublicate:	false,
-			Flag:		false,
-		}
 	}
 
 	clidLen, offset, err := ReadInt16(buf, offset)
@@ -145,24 +113,29 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	}
 
 	if willFlag {
-		tLen, offset, err := ReadInt16(buf, offset)
+		log.Println("will is set")
+		var willTopicLen, willMessageLen uint16
+		var willTopic, willMessage string
+
+		willTopicLen, offset, err = ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
+		willTopic, offset, err = ReadString(buf, offset, int(willTopicLen))
 
-		c.Will.Topic, offset, err = ReadString(buf, offset, int(tLen))
+		willMessageLen, offset, err = ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
+		willMessage, offset, err = ReadString(buf, offset, int(willMessageLen))
 
-		pLen, offset, err := ReadInt16(buf, offset)
-		if err != nil {
-			return err
-		}
-
-		c.Will.Payload, offset, err = ReadString(buf, offset, int(pLen))
-		if err != nil {
-			return err
+		c.Will = &Message{
+			QoS:       willQoS,
+			Retain:    willRetain,
+			Topic:     willTopic,
+			Payload:   willMessage,
+			Dublicate: false,
+			Flag:      false,
 		}
 	}
 
@@ -254,6 +227,18 @@ func (c *ConnPacket) Pack() []byte {
 }
 
 func (c *ConnPacket) String() string {
-	return "Message Connect: {ver=" + strconv.Itoa(int(c.Version)) + ", keepalive=" +
-		strconv.Itoa(int(c.KeepAlive)) + ", clientId=" + c.ClientID + ", login=" + c.Username + ", password=" + c.Password + "}"
+	var sb strings.Builder
+
+	sb.WriteString("Message Connect: {")
+	sb.WriteString("ver=" + strconv.Itoa(int(c.Version)) + ", ")
+	sb.WriteString("keepalive=" + strconv.Itoa(int(c.KeepAlive)) + ", ")
+	sb.WriteString("clientId=" + c.ClientID + ", ")
+	if c.Will != nil {
+		sb.WriteString("will=" + c.Will.String() + ", ")
+	}
+	sb.WriteString("login=" + c.Username + ", ")
+	sb.WriteString("password=" + c.Password)
+	sb.WriteString("}")
+
+	return sb.String()
 }

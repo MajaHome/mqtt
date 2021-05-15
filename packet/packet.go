@@ -41,12 +41,8 @@ type Packet interface {
 }
 
 func Types() []Type {
-	return []Type{RESERVED, CONNECT, CONNACK,
-		PUBLISH, PUBACK, PUBREC, PUBREL, PUBCOMP,
-		SUBSCRIBE, SUBACK,
-		UNSUBSCRIBE, UNSUBACK,
-		PING, PONG,
-		DISCONNECT}
+	return []Type{RESERVED, CONNECT, CONNACK, PUBLISH, PUBACK, PUBREC, PUBREL, PUBCOMP, SUBSCRIBE, SUBACK,
+		UNSUBSCRIBE, UNSUBACK, PING, PONG, DISCONNECT}
 }
 
 func (t Type) String() string {
@@ -119,6 +115,41 @@ func Create(buf []byte) (Packet, error) {
 	}
 
 	return nil, ErrInvalidPacketType
+}
+
+func NewPacket(t Type) Packet {
+	switch t {
+	case CONNECT:
+		return NewConnect()
+	case CONNACK:
+		return NewConnAck()
+	case PUBLISH:
+		return NewPublish()
+	case PUBACK:
+		return NewPubAck()
+	case PUBREC:
+		return NewPubRec()
+	case PUBREL:
+		return NewPubRel()
+	case PUBCOMP:
+		return NewPubComp()
+	case SUBSCRIBE:
+		return NewSubscribe()
+	case SUBACK:
+		return NewSubAck()
+	case UNSUBSCRIBE:
+		return NewUnSub()
+	case UNSUBACK:
+		return NewUnSubAck()
+	case PING:
+		return NewPing()
+	case PONG:
+		return NewPong()
+	case DISCONNECT:
+		return NewDisconnect()
+	}
+
+	return nil
 }
 
 func ReadInt8(buf []byte, offset int) (uint8, int, error) {

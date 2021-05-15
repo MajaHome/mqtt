@@ -2,19 +2,18 @@ package server
 
 import (
 	"crypto/rand"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"log"
 	"mqtt/model"
 	"mqtt/packet"
 	"net"
-
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
 )
 
 type Engine struct {
 	db      *gorm.DB
 	clients map[string]*Client
-	channel chan Event
+	channel chan *Event
 }
 
 func NewEngine() *Engine {
@@ -27,16 +26,18 @@ func NewEngine() *Engine {
 	log.Println("migrate database")
 	conn.AutoMigrate(&model.User{})
 
-	return &Engine{
+	e := &Engine{
 		db:      conn,
 		clients: make(map[string]*Client),
-		channel: make(chan Event),
+		channel: make(chan *Event),
 	}
-}
 
-func (e Engine) Process(server *Server) {
 	go e.manageClients()
 
+	return e
+}
+
+func (e *Engine) Process(server *Server) {
 	for {
 		conn, err := server.Accept()
 		if err != nil {
@@ -45,6 +46,7 @@ func (e Engine) Process(server *Server) {
 			continue
 		}
 
+		// process with CONNECT
 		go func() {
 			pkt, err := server.ReadPacket(conn)
 			if err != nil {
@@ -56,15 +58,15 @@ func (e Engine) Process(server *Server) {
 			if pkt.Type() == packet.CONNECT {
 				res := packet.NewConnAck()
 
-				cp := pkt.(*packet.ConnPacket)
+				connPacket := pkt.(*packet.ConnPacket)
 
 				// check version, now only 4 (3.11)
-				if cp.Version != 4 {
+				if connPacket.Version != 4 {
 					res.ReturnCode = uint8(packet.ConnectUnacceptableProtocol)
 					return
 				}
 
-				if len(cp.ClientID) == 0 && !cp.CleanSession {
+				if len(connPacket.ClientID) == 0 && !connPacket.CleanSession {
 					res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
 					return
 				}
@@ -72,9 +74,9 @@ func (e Engine) Process(server *Server) {
 				res.ReturnCode = uint8(packet.ConnectAccepted)
 
 				// check authorization
-				if len(cp.Username) > 0 {
+				if len(connPacket.Username) > 0 {
 					var user model.User
-					result := e.db.Take(&user, "user_name = ? and password = ?", cp.Username, cp.Password)
+					result := e.db.Take(&user, "user_name = ? and password = ?", connPacket.Username, connPacket.Password)
 					if result.Error != nil {
 						log.Println("username/password is wrong")
 						res.ReturnCode = uint8(packet.ConnectBadUserPass)
@@ -83,14 +85,14 @@ func (e Engine) Process(server *Server) {
 
 				var client *Client
 				if res.ReturnCode == uint8(packet.ConnectAccepted) {
-					if !cp.CleanSession && e.clients[cp.ClientID] != nil {
-						res.Session = !cp.CleanSession
-					} else {
-						res.Session = false
+					res.Session = false
+					if !connPacket.CleanSession && e.clients[connPacket.ClientID] != nil {
+						res.Session = !connPacket.CleanSession
 					}
-					client = e.saveClient(cp.ClientID, conn, res.Session)
-					if cp.Will != nil && res.Session {
-						client.saveWill(cp.Will.QoS, cp.Will.Retain)
+
+					client = e.saveClient(connPacket.ClientID, conn, !connPacket.CleanSession)
+					if connPacket.Will != nil && res.Session {
+						client.will = connPacket.Will
 					}
 				}
 
@@ -109,7 +111,7 @@ func (e Engine) Process(server *Server) {
 				}
 
 				// start manage client
-				client.Start(server)
+				go client.Start(server)
 			} else {
 				log.Println("wrong packet. expect CONNECT")
 				conn.Close()
@@ -121,102 +123,111 @@ func (e Engine) Process(server *Server) {
 
 func (e *Engine) manageClients() {
 	for event := range e.channel {
-		log.Println("engine " + event.String())
+		log.Println("engineChan receive message: " + event.String())
 
 		switch event.packetType {
 		case packet.DISCONNECT:
 			client := e.clients[event.clientId]
+			client.Stop()
 			if !client.session {
 				delete(e.clients, event.clientId)
 			}
-			break
 		case packet.SUBSCRIBE:
+			// event := &Event{clientId: c.clientId, packetType: pkt.Type(), topic: t}
+			// TODO send retain message if exists for this topic
 			break
-		case packet.UNSUBSCRIBE:
-			break
-		case packet.PUBLISH:
-			/*
-				RETAIN – при публикации данных с установленным флагом retain, брокер сохранит его. При
-				следующей подписке на этот топик брокер незамедлительно отправит сообщение с этим флагом.
+		case packet.PUBLISH: // in
+			// TODO if RETAIN set - save message to retain queue (and push on subscribe)
 
-				DUP – флаг дубликата устанавливается, когда клиент или MQTT брокер совершает повторную
-				отправку пакета (используется в типах PUBLISH, SUBSCRIBE, UNSUBSCRIBE, PUBREL). При
-				установленном флаге переменный заголовок должен содержать Message ID (идентификатор
-				сообщения)
+			switch packet.QoS(event.qos) {
+			case packet.AtMostOnce:
+				e.publishMessage(event)
+			case packet.AtLeastOnce: // PUBLISH -> PUBACK
+				res := &Event{packetType: packet.PUBACK, messageId: event.messageId, clientId: event.clientId}
+				e.clients[event.clientId].clientChan <- res
 
-				QoS 1 At least once. Этот уровень гарантирует, что сообщение точно будет доставлено брокеру,
-				но есть вероятность дублирования сообщений от издателя. После получения дубликата сообщения,
-				брокер снова рассылает это сообщение подписчикам, а издателю снова отправляет подтверждение
-				о получении сообщения. Если издатель не получил PUBACK сообщения от брокера, он повторно
-				отправляет этот пакет, при этом в DUP устанавливается «1».
-				PUBLISH -> PUBACK
+				// send published message to all subscribed clients
+				e.publishMessage(event)
+			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
+				res := &Event{packetType: packet.PUBREC, messageId: event.messageId, clientId: event.clientId}
+				e.clients[event.clientId].clientChan <- res
 
-				QoS 2 Exactly once. На этом уровне гарантируется доставка сообщений подписчику и исключается
-				возможное дублирование отправленных сообщений.
-				PUBLISH ->PUBREC, PUBREL - PUBCOMP
-
-				Издатель отправляет сообщение брокеру. В этом сообщении указывается уникальный Packet ID,
-				QoS=2 и DUP=0. Издатель хранит сообщение неподтвержденным пока не получит от брокера ответ
-				PUBREC. Брокер отвечает сообщением PUBREC в котором содержится тот же Packet ID. После его
-				получения издатель отправляет PUBREL с тем же Packet ID. До того, как брокер получит PUBREL
-				он должен хранить копию сообщения у себя. После получения PUBREL он удаляет копию сообщения
-				и отправляет издателю сообщение PUBCOMP о том, что транзакция завершена.
-			*/
-
-			for _, client := range e.clients {
-				if client != nil && client.isSubscribed(event.topic.name) {
-					res := Event{
-						packetType: packet.PUBLISH,
-						messageId:  event.messageId,
-						topic:      event.topic,
-						payload:    event.payload,
-						retain:     event.retain,
-						dublicate:  event.dublicate,
-					}
-					client.channel <- res
-				}
+				// todo: record packet in delivery queue
 			}
-		case packet.PUBACK:
+		case packet.PUBACK: // out
+			// we receive answer on publish command,
+			// TODO remove from send queue
 			break
-		case packet.PUBREC:
+		case packet.PUBREC: // out
+			// we receive answer on PUUBLISH with qos2,
+
+			// TODO send PUBREL
+
 			break
-		case packet.PUBREL:
-			break
-		case packet.PUBCOMP:
+		case packet.PUBREL: // in
+			// TODO remove from delivery queue
+
+			// send answer PUBCOMP
+			res := &Event{packetType: packet.PUBCOMP, messageId: event.messageId, clientId: event.clientId}
+			e.clients[event.clientId].clientChan <- res
+
+			// TODO send publish
+			//todo				e.publishMessage(storedEvent)
+		case packet.PUBCOMP: // out
+			// we receive answer on PUUBREL
+
+			// TODO remove from sent queue with qos2
 			break
 		default:
-			// unexpected disconnect, send will message
+			log.Println("engineChan: unexpected disconnect")
 
-			/*
-				Will Flag - при установленном флаге, после того, как клиент отключится от брокера без отправки команды DISCONNECT
-				(в случаях непредсказуемого обрыва связи и т.д.), брокер оповестит об этом всех подключенных к нему клиентов через
-				так называемый Will Message.
-			*/
+			client := e.clients[event.clientId]
+			if client != nil {
+				// todo is not clean session - save subscription
 
-			break
+				// TODO if will message set for client - send this message to all clients
+
+				if !client.session {
+					delete(e.clients, event.clientId)
+				}
+			}
 		}
 	}
+}
 
-	log.Println("closed communication channel")
+func (e *Engine) publishMessage(event *Event) {
+	for _, client := range e.clients {
+		if client != nil && client.isSubscribed(event.topic.name) {
+			res := &Event{
+				packetType: packet.PUBLISH,
+				clientId:   event.clientId,
+				messageId:  event.messageId,
+				topic:      event.topic,
+				payload:    event.payload,
+				qos:        event.qos,
+				retain:     event.retain,
+				dublicate:  event.dublicate,
+			}
+			client.clientChan <- res
+		}
+	}
 }
 
 func (e *Engine) saveClient(id string, conn net.Conn, session bool) *Client {
-	var cid string
+	var cid string = id
 	if id == "" {
 		// generate temporary ident
 		ident := make([]byte, 8)
 		rand.Read(ident)
 		cid = string(cid)
-	} else {
-		cid = id
 	}
 
-	if e.clients[id] != nil {
-		e.clients[id].conn = conn
+	if e.clients[cid] != nil {
+		e.clients[cid].conn = conn
 	} else {
 		client := NewClient(cid, conn, session, e.channel)
-		e.clients[id] = client
+		e.clients[cid] = client
 	}
 
-	return e.clients[id]
+	return e.clients[cid]
 }
