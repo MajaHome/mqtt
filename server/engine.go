@@ -11,9 +11,12 @@ import (
 )
 
 type Engine struct {
-	db      *gorm.DB
-	clients map[string]*Client
-	channel chan *Event
+	db       *gorm.DB
+	clients  map[string]*Client
+	channel  chan *Event
+	send     map[uint16]Event
+	delivery map[uint16]Event
+	retain   map[string]Event
 }
 
 func NewEngine() *Engine {
@@ -27,9 +30,12 @@ func NewEngine() *Engine {
 	conn.AutoMigrate(&model.User{})
 
 	e := &Engine{
-		db:      conn,
-		clients: make(map[string]*Client),
-		channel: make(chan *Event),
+		db:       conn,
+		clients:  make(map[string]*Client),
+		channel:  make(chan *Event),
+		send:     make(map[uint16]Event),
+		delivery: make(map[uint16]Event),
+		retain:   make(map[string]Event),
 	}
 
 	go e.manageClients()
@@ -135,10 +141,14 @@ func (e *Engine) manageClients() {
 		case packet.SUBSCRIBE:
 			// event := &Event{clientId: c.clientId, packetType: pkt.Type(), topic: t}
 			// TODO send retain message if exists for this topic
+
+			// todo is not clean session - save subscription
+
 			break
 		case packet.PUBLISH: // in
 			// TODO if RETAIN set - save message to retain queue (and push on subscribe)
 
+			// todo if topic has higher qos - increase qos in published message
 			switch packet.QoS(event.qos) {
 			case packet.AtMostOnce:
 				e.publishMessage(event)
@@ -146,46 +156,68 @@ func (e *Engine) manageClients() {
 				res := &Event{packetType: packet.PUBACK, messageId: event.messageId, clientId: event.clientId}
 				e.clients[event.clientId].clientChan <- res
 
+				// save message
+				e.delivery[event.messageId] = *res
+
 				// send published message to all subscribed clients
 				e.publishMessage(event)
 			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
 				res := &Event{packetType: packet.PUBREC, messageId: event.messageId, clientId: event.clientId}
 				e.clients[event.clientId].clientChan <- res
 
-				// todo: record packet in delivery queue
+				// record packet in delivery queue
+				e.delivery[event.messageId] = *event
 			}
 		case packet.PUBACK: // out
 			// we receive answer on publish command,
-			// TODO remove from send queue
-			break
+			_, ok := e.send[event.messageId]
+			if ok {
+				// remove from sent queue
+				delete(e.send, event.messageId)
+			} else {
+				log.Printf("error process PUBACK, message %d for %s was not found\n", event.messageId, event.clientId)
+			}
 		case packet.PUBREC: // out
-			// we receive answer on PUUBLISH with qos2,
-
-			// TODO send PUBREL
-
-			break
+			// we receive answer on PUBLISH with qos2,
+			answer, ok := e.send[event.messageId]
+			if ok && event.clientId == answer.clientId {
+				// send PUBREL
+				res := &Event{packetType: packet.PUBREL, clientId: event.clientId, messageId: event.messageId}
+				e.clients[event.clientId].clientChan <- res
+			} else {
+				log.Printf("error process PUBREC, message %d for %s was not found\n", event.messageId, event.clientId)
+			}
 		case packet.PUBREL: // in
-			// TODO remove from delivery queue
+			event, ok := e.delivery[event.messageId]
+			if ok {
+				// send answer PUBCOMP
+				res := &Event{packetType: packet.PUBCOMP, messageId: event.messageId, clientId: event.clientId}
+				e.clients[event.clientId].clientChan <- res
 
-			// send answer PUBCOMP
-			res := &Event{packetType: packet.PUBCOMP, messageId: event.messageId, clientId: event.clientId}
-			e.clients[event.clientId].clientChan <- res
+				// send publish
+				e.publishMessage(&event)
 
-			// TODO send publish
-			//todo				e.publishMessage(storedEvent)
+				// remove from delivery queue
+				delete(e.delivery, event.messageId)
+			} else {
+				log.Printf("error process PUBREL, message %d for %s was not found\n", event.messageId, event.clientId)
+			}
 		case packet.PUBCOMP: // out
-			// we receive answer on PUUBREL
-
-			// TODO remove from sent queue with qos2
-			break
+			// we receive answer on PUBREL
+			_, ok := e.send[event.messageId]
+			if ok {
+				// remove from sent queue with qos2
+				delete(e.send, event.messageId)
+			} else {
+				log.Printf("error process PUBCOMP, message %d for %s was not found\n", event.messageId, event.clientId)
+			}
 		default:
 			log.Println("engineChan: unexpected disconnect")
 
 			client := e.clients[event.clientId]
 			if client != nil {
-				// todo is not clean session - save subscription
-
-				// TODO if will message set for client - send this message to all clients
+				// TODO if will message is set for client - send this message to all clients
+				// event.topic.name should be #
 
 				if !client.session {
 					delete(e.clients, event.clientId)
@@ -197,18 +229,37 @@ func (e *Engine) manageClients() {
 
 func (e *Engine) publishMessage(event *Event) {
 	for _, client := range e.clients {
-		if client != nil && client.isSubscribed(event.topic.name) {
-			res := &Event{
-				packetType: packet.PUBLISH,
-				clientId:   event.clientId,
-				messageId:  event.messageId,
-				topic:      event.topic,
-				payload:    event.payload,
-				qos:        event.qos,
-				retain:     event.retain,
-				dublicate:  event.dublicate,
+		if client != nil {
+			if client.Contains(event.topic.name) {
+				res := &Event{
+					packetType: packet.PUBLISH,
+					clientId:   event.clientId,
+					messageId:  event.messageId,
+					topic:      event.topic,
+					payload:    event.payload,
+					qos:        event.qos,
+					retain:     event.retain,
+					dublicate:  event.dublicate,
+				}
+				client.clientChan <- res
+
+				if event.qos > 0 {
+					e.send[event.messageId] = *res
+				}
+			} else if event.topic.name == "#" {
+				// TODO send broadcast (will-message) to all clients
+				res := &Event{
+					packetType: packet.PUBLISH,
+					clientId:   event.clientId,
+					messageId:  event.messageId,
+					topic:      event.topic,
+					payload:    event.payload,
+					qos:        event.qos,
+					retain:     event.retain,
+					dublicate:  event.dublicate,
+				}
+				client.clientChan <- res
 			}
-			client.clientChan <- res
 		}
 	}
 }

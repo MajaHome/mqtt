@@ -106,7 +106,7 @@ func (c *Client) Start(server *Server) {
 			var qos []packet.QoS
 			for _, topic := range req.Topics {
 				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
-				qos = append(qos, c.addSubscribtion(t))
+				qos = append(qos, c.addSubscription(t))
 
 				event := &Event{clientId: c.clientId, packetType: pkt.Type(), topic: t}
 				c.engineChan <- event
@@ -181,7 +181,7 @@ func (c *Client) Stop() {
 	c.conn.Close()
 }
 
-func (c *Client) addSubscribtion(t EventTopic) packet.QoS {
+func (c *Client) addSubscription(t EventTopic) packet.QoS {
 	// 0x80 clientChan qos clientChan case of error ?
 	// check for duplicate
 	for _, v := range c.subscription {
@@ -200,10 +200,6 @@ func (c *Client) removeSubscription(t EventTopic) bool {
 	if len(c.subscription) == 0 {
 		return false
 	}
-	if len(c.subscription) == 1 {
-		c.subscription = []EventTopic{}
-		return true
-	}
 	for i, v := range c.subscription {
 		if v.name == t.name {
 			if len(c.subscription) > i+1 {
@@ -216,13 +212,51 @@ func (c *Client) removeSubscription(t EventTopic) bool {
 	return false
 }
 
-func (c *Client) isSubscribed(topic string) bool {
-	for _, v := range c.subscription {
-		if v.name == topic {
+func (c *Client) Contains(topic string) bool {
+	t := strings.Split(topic, "/")
+
+	// searched topic is empty
+	if len(t) == 0 {
+		return false
+	}
+
+	for _, subs := range c.subscription {
+		var i int = 0	// start from first level
+		s := strings.Split(subs.name, "/")
+
+		var found bool
+		for {
+			// subscribed to any topic
+			if s[i] == "#" {
+				found = true
+				break
+			}
+
+			// match at this level
+			if s[i] == "*" || s[i] == t[i] {
+				if len(t) == i+1 {
+					if len(t) == len(s) {
+						found = true
+						break
+					}
+					break
+				}
+
+				// try next level
+				i++
+				continue
+			}
+
+			// doen't match
+			break
+		}
+
+		if found {
 			return true
 		}
 	}
-	return true
+
+	return false
 }
 
 func (c *Client) String() string {
