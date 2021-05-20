@@ -1,7 +1,9 @@
 # mqtt server
 
 ## Status
-Still not functional. Under development
+CONNECT, SUBSCRIBE, PUBLISH (with any qos) seems work fine.
+retain messages and sending will under development
+also persistent still doesn't work (temporary;)
 
 ## Purpose
 This is my implementation of mqtt server for Maja Suite project. Mqtt server will be central queue for all messages 
