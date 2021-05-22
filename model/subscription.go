@@ -1,12 +1,12 @@
 package model
 
-import "github.com/jinzhu/gorm"
+import (
+	"github.com/jinzhu/gorm"
+)
 
 type Subscription struct {
 	gorm.Model
-
-
-	// todo
-	UserName string `gorm:"uniqueIndex"`
-	Password string
+	ClientId	string
+	Topic		string
+	Qos			int
 }

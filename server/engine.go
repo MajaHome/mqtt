@@ -2,8 +2,9 @@ package server
 
 import (
 	"crypto/rand"
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"gorm.io/driver/sqlite"
+	_ "gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	"log"
 	"mqtt/model"
 	"mqtt/packet"
@@ -21,13 +22,15 @@ type Engine struct {
 
 func NewEngine() *Engine {
 	log.Println("initialize database")
-	conn, err := gorm.Open("sqlite3", "mqtt.db")
+	conn, err := gorm.Open(sqlite.Open("mqtt.db"), &gorm.Config{})
 	if err != nil {
 		panic(err)
 	}
 
 	log.Println("migrate database")
 	conn.AutoMigrate(&model.User{})
+	conn.AutoMigrate(&model.Subscription{})
+	conn.AutoMigrate(&model.RetainMessage{})
 
 	e := &Engine{
 		db:       conn,
@@ -116,6 +119,8 @@ func (e *Engine) Process(server *Server) {
 					return
 				}
 
+				// TODO Restore subscription
+
 				// start manage client
 				go client.Start(server)
 			} else {
@@ -139,22 +144,44 @@ func (e *Engine) manageClients() {
 				delete(e.clients, event.clientId)
 			}
 		case packet.SUBSCRIBE:
-			// event := &Event{clientId: c.clientId, packetType: pkt.Type(), topic: t}
-			// TODO send retain message if exists for this topic
+			// todo: do not support wildcard topic names on subscribe yet
+			var retain model.RetainMessage
+			if row, err := e.db.Where(&model.RetainMessage{Topic: event.topic.name}).Find(&retain).Rows(); err == nil {
+				for row.Next() {
+					revent := &Event{messageId: retain.MessageId, topic: EventTopic{name: retain.Topic, qos: retain.Qos},
+						payload: retain.Payload, qos: retain.Qos, retain: true}
+					e.publishMessage(revent)
+				}
+			}
 
-			// todo is not clean session - save subscription
+			// if not clean session - save subscription
+			if e.clients[event.clientId].session {
+				subs := model.Subscription{ClientId: event.clientId, Topic: event.topic.name, Qos: event.topic.qos}
+				e.db.Create(&subs)
+			}
+		case packet.UNSUBSCRIBE:
+			client := e.clients[event.clientId]
 
-			break
+			if client.session {
+				e.db.Where(&model.Subscription{ClientId: event.clientId, Topic: event.topic.name}).Delete(&model.Subscription{})
+			}
 		case packet.PUBLISH: // in
-			// TODO if RETAIN set - save message to retain queue (and push on subscribe)
+			client := e.clients[event.clientId]
+			if event.retain {
+				retain := model.RetainMessage{MessageId: event.messageId, Topic: event.topic.name,
+					Payload: event.payload, Qos: event.topic.qos}
+				e.db.Create(&retain)
+			}
 
-			// todo if topic has higher qos - increase qos in published message
+			// todo if topic has higher qos - increase qos in published message. ps. not sure. can send message to
+			// unsubscribed topic
+
 			switch packet.QoS(event.qos) {
 			case packet.AtMostOnce:
 				e.publishMessage(event)
 			case packet.AtLeastOnce: // PUBLISH -> PUBACK
 				res := &Event{packetType: packet.PUBACK, messageId: event.messageId, clientId: event.clientId}
-				e.clients[event.clientId].clientChan <- res
+				client.clientChan <- res
 
 				// save message
 				e.delivery[event.messageId] = *res
@@ -163,7 +190,7 @@ func (e *Engine) manageClients() {
 				e.publishMessage(event)
 			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
 				res := &Event{packetType: packet.PUBREC, messageId: event.messageId, clientId: event.clientId}
-				e.clients[event.clientId].clientChan <- res
+				client.clientChan <- res
 
 				// record packet in delivery queue
 				e.delivery[event.messageId] = *event
@@ -216,9 +243,22 @@ func (e *Engine) manageClients() {
 
 			client := e.clients[event.clientId]
 			if client != nil {
-				// TODO if will message is set for client - send this message to all clients
-				// event.topic.name should be #
+				// if will message is set for client - send this message to all clients
+				if client.will != nil {
+					will := &Event{
+						topic: EventTopic{name: client.will.Topic},
+						payload: client.will.Payload,
+						qos: client.will.QoS.Int(),
+						retain: client.will.Retain,
+					}
+					for _, c := range e.clients {
+						if c != nil {
+							client.clientChan <- will
+						}
+					}
+				}
 
+				// delete clean session
 				if !client.session {
 					delete(e.clients, event.clientId)
 				}
@@ -228,37 +268,16 @@ func (e *Engine) manageClients() {
 }
 
 func (e *Engine) publishMessage(event *Event) {
+	event.packetType = packet.PUBLISH
+
 	for _, client := range e.clients {
 		if client != nil {
 			if client.Contains(event.topic.name) {
-				res := &Event{
-					packetType: packet.PUBLISH,
-					clientId:   event.clientId,
-					messageId:  event.messageId,
-					topic:      event.topic,
-					payload:    event.payload,
-					qos:        event.qos,
-					retain:     event.retain,
-					dublicate:  event.dublicate,
-				}
-				client.clientChan <- res
+				client.clientChan <- event
 
 				if event.qos > 0 {
-					e.send[event.messageId] = *res
+					e.send[event.messageId] = *event
 				}
-			} else if event.topic.name == "#" {
-				// TODO send broadcast (will-message) to all clients
-				res := &Event{
-					packetType: packet.PUBLISH,
-					clientId:   event.clientId,
-					messageId:  event.messageId,
-					topic:      event.topic,
-					payload:    event.payload,
-					qos:        event.qos,
-					retain:     event.retain,
-					dublicate:  event.dublicate,
-				}
-				client.clientChan <- res
 			}
 		}
 	}

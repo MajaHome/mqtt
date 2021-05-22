@@ -35,7 +35,6 @@ func (c *Client) Start(server *Server) {
 
 	c.stop = false
 	for {
-		//log.Println("thread for " + c.clientId)
 		if c.stop {
 			log.Println("stop " + c.clientId)
 			return
@@ -91,12 +90,11 @@ func (c *Client) Start(server *Server) {
 
 		switch pkt.Type() {
 		case packet.DISCONNECT:
-			res := packet.NewDisconnect()
-
 			event := &Event{clientId: c.clientId, packetType: pkt.Type()}
 			c.engineChan <- event
-
+			res := packet.NewDisconnect()
 			err = server.WritePacket(c.conn, res)
+			c.Stop()
 		case packet.PING:
 			res := packet.NewPong()
 			err = server.WritePacket(c.conn, res)
