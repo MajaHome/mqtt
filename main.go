@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"mqtt/server"
+	"mqtt/transport"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,15 +19,13 @@ func main() {
 	flag.Parse()
 	log.Println("Starting broker ...")
 
-	// init
-	engine := server.NewEngine()
-
-	mqtt, err := server.RunMqtt()
+	mqtt, err := transport.RunMqtt()
 	if err != nil {
 		log.Panic("error running mqtt server", err)
 	}
 
-	go engine.Process(mqtt)
+	engine := server.NewEngine()
+	engine.Process(mqtt)
 
 	finish := make(chan os.Signal, 1)
 	signal.Notify(finish, syscall.SIGINT, syscall.SIGTERM)

@@ -8,16 +8,17 @@ import (
 	"log"
 	"mqtt/model"
 	"mqtt/packet"
+	"mqtt/transport"
 	"net"
 )
 
 type Engine struct {
 	db       *gorm.DB
 	clients  map[string]*Client
-	channel  chan *Event
-	send     map[uint16]Event
-	delivery map[uint16]Event
-	retain   map[string]Event
+	channel  chan *transport.Event
+	send     map[uint16]transport.Event
+	delivery map[uint16]transport.Event
+	retain   map[string]transport.Event
 }
 
 func NewEngine() *Engine {
@@ -35,10 +36,10 @@ func NewEngine() *Engine {
 	e := &Engine{
 		db:       conn,
 		clients:  make(map[string]*Client),
-		channel:  make(chan *Event),
-		send:     make(map[uint16]Event),
-		delivery: make(map[uint16]Event),
-		retain:   make(map[string]Event),
+		channel:  make(chan *transport.Event),
+		send:     make(map[uint16]transport.Event),
+		delivery: make(map[uint16]transport.Event),
+		retain:   make(map[string]transport.Event),
 	}
 
 	go e.manageClients()
@@ -46,7 +47,7 @@ func NewEngine() *Engine {
 	return e
 }
 
-func (e *Engine) Process(server *Server) {
+func (e *Engine) Process(server *transport.Server) {
 	for {
 		conn, err := server.Accept()
 		if err != nil {
@@ -136,120 +137,120 @@ func (e *Engine) manageClients() {
 	for event := range e.channel {
 		log.Println("engineChan receive message: " + event.String())
 
-		switch event.packetType {
+		switch event.PacketType {
 		case packet.DISCONNECT:
-			client := e.clients[event.clientId]
+			client := e.clients[event.ClientId]
 			client.Stop()
 			if !client.session {
-				delete(e.clients, event.clientId)
+				delete(e.clients, event.ClientId)
 			}
 		case packet.SUBSCRIBE:
 			// todo: do not support wildcard topic names on subscribe yet
 			var retain model.RetainMessage
-			if row, err := e.db.Where(&model.RetainMessage{Topic: event.topic.name}).Find(&retain).Rows(); err == nil {
+			if row, err := e.db.Where(&model.RetainMessage{Topic: event.Topic.Name}).Find(&retain).Rows(); err == nil {
 				for row.Next() {
-					revent := &Event{messageId: retain.MessageId, topic: EventTopic{name: retain.Topic, qos: retain.Qos},
-						payload: retain.Payload, qos: retain.Qos, retain: true}
+					revent := &transport.Event{MessageId: retain.MessageId, Topic: transport.EventTopic{Name: retain.Topic, Qos: retain.Qos},
+						Payload: retain.Payload, Qos: retain.Qos, Retain: true}
 					e.publishMessage(revent)
 				}
 			}
 
 			// if not clean session - save subscription
-			if e.clients[event.clientId].session {
-				subs := model.Subscription{ClientId: event.clientId, Topic: event.topic.name, Qos: event.topic.qos}
+			if e.clients[event.ClientId].session {
+				subs := model.Subscription{ClientId: event.ClientId, Topic: event.Topic.Name, Qos: event.Topic.Qos}
 				e.db.Create(&subs)
 			}
 		case packet.UNSUBSCRIBE:
-			client := e.clients[event.clientId]
+			client := e.clients[event.ClientId]
 
 			if client.session {
-				e.db.Where(&model.Subscription{ClientId: event.clientId, Topic: event.topic.name}).Delete(&model.Subscription{})
+				e.db.Where(&model.Subscription{ClientId: event.ClientId, Topic: event.Topic.Name}).Delete(&model.Subscription{})
 			}
 		case packet.PUBLISH: // in
-			client := e.clients[event.clientId]
-			if event.retain {
-				retain := model.RetainMessage{MessageId: event.messageId, Topic: event.topic.name,
-					Payload: event.payload, Qos: event.topic.qos}
+			client := e.clients[event.ClientId]
+			if event.Retain {
+				retain := model.RetainMessage{MessageId: event.MessageId, Topic: event.Topic.Name,
+					Payload: event.Payload, Qos: event.Topic.Qos}
 				e.db.Create(&retain)
 			}
 
 			// todo if topic has higher qos - increase qos in published message. ps. not sure. can send message to
 			// unsubscribed topic
 
-			switch packet.QoS(event.qos) {
+			switch packet.QoS(event.Qos) {
 			case packet.AtMostOnce:
 				e.publishMessage(event)
 			case packet.AtLeastOnce: // PUBLISH -> PUBACK
-				res := &Event{packetType: packet.PUBACK, messageId: event.messageId, clientId: event.clientId}
+				res := &transport.Event{PacketType: packet.PUBACK, MessageId: event.MessageId, ClientId: event.ClientId}
 				client.clientChan <- res
 
 				// save message
-				e.delivery[event.messageId] = *res
+				e.delivery[event.MessageId] = *res
 
 				// send published message to all subscribed clients
 				e.publishMessage(event)
 			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
-				res := &Event{packetType: packet.PUBREC, messageId: event.messageId, clientId: event.clientId}
+				res := &transport.Event{PacketType: packet.PUBREC, MessageId: event.MessageId, ClientId: event.ClientId}
 				client.clientChan <- res
 
 				// record packet in delivery queue
-				e.delivery[event.messageId] = *event
+				e.delivery[event.MessageId] = *event
 			}
 		case packet.PUBACK: // out
 			// we receive answer on publish command,
-			_, ok := e.send[event.messageId]
+			_, ok := e.send[event.MessageId]
 			if ok {
 				// remove from sent queue
-				delete(e.send, event.messageId)
+				delete(e.send, event.MessageId)
 			} else {
-				log.Printf("error process PUBACK, message %d for %s was not found\n", event.messageId, event.clientId)
+				log.Printf("error process PUBACK, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		case packet.PUBREC: // out
 			// we receive answer on PUBLISH with qos2,
-			answer, ok := e.send[event.messageId]
-			if ok && event.clientId == answer.clientId {
+			answer, ok := e.send[event.MessageId]
+			if ok && event.ClientId == answer.ClientId {
 				// send PUBREL
-				res := &Event{packetType: packet.PUBREL, clientId: event.clientId, messageId: event.messageId}
-				e.clients[event.clientId].clientChan <- res
+				res := &transport.Event{PacketType: packet.PUBREL, ClientId: event.ClientId, MessageId: event.MessageId}
+				e.clients[event.ClientId].clientChan <- res
 			} else {
-				log.Printf("error process PUBREC, message %d for %s was not found\n", event.messageId, event.clientId)
+				log.Printf("error process PUBREC, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		case packet.PUBREL: // in
-			event, ok := e.delivery[event.messageId]
+			event, ok := e.delivery[event.MessageId]
 			if ok {
 				// send answer PUBCOMP
-				res := &Event{packetType: packet.PUBCOMP, messageId: event.messageId, clientId: event.clientId}
-				e.clients[event.clientId].clientChan <- res
+				res := &transport.Event{PacketType: packet.PUBCOMP, MessageId: event.MessageId, ClientId: event.ClientId}
+				e.clients[event.ClientId].clientChan <- res
 
 				// send publish
 				e.publishMessage(&event)
 
 				// remove from delivery queue
-				delete(e.delivery, event.messageId)
+				delete(e.delivery, event.MessageId)
 			} else {
-				log.Printf("error process PUBREL, message %d for %s was not found\n", event.messageId, event.clientId)
+				log.Printf("error process PUBREL, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		case packet.PUBCOMP: // out
 			// we receive answer on PUBREL
-			_, ok := e.send[event.messageId]
+			_, ok := e.send[event.MessageId]
 			if ok {
 				// remove from sent queue with qos2
-				delete(e.send, event.messageId)
+				delete(e.send, event.MessageId)
 			} else {
-				log.Printf("error process PUBCOMP, message %d for %s was not found\n", event.messageId, event.clientId)
+				log.Printf("error process PUBCOMP, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		default:
 			log.Println("engineChan: unexpected disconnect")
 
-			client := e.clients[event.clientId]
+			client := e.clients[event.ClientId]
 			if client != nil {
 				// if will message is set for client - send this message to all clients
 				if client.will != nil {
-					will := &Event{
-						topic: EventTopic{name: client.will.Topic},
-						payload: client.will.Payload,
-						qos: client.will.QoS.Int(),
-						retain: client.will.Retain,
+					will := &transport.Event{
+						Topic:   transport.EventTopic{Name: client.will.Topic},
+						Payload: client.will.Payload,
+						Qos:     client.will.QoS.Int(),
+						Retain:  client.will.Retain,
 					}
 					for _, c := range e.clients {
 						if c != nil {
@@ -260,23 +261,23 @@ func (e *Engine) manageClients() {
 
 				// delete clean session
 				if !client.session {
-					delete(e.clients, event.clientId)
+					delete(e.clients, event.ClientId)
 				}
 			}
 		}
 	}
 }
 
-func (e *Engine) publishMessage(event *Event) {
-	event.packetType = packet.PUBLISH
+func (e *Engine) publishMessage(event *transport.Event) {
+	event.PacketType = packet.PUBLISH
 
 	for _, client := range e.clients {
 		if client != nil {
-			if client.Contains(event.topic.name) {
+			if client.Contains(event.Topic.Name) {
 				client.clientChan <- event
 
-				if event.qos > 0 {
-					e.send[event.messageId] = *event
+				if event.Qos > 0 {
+					e.send[event.MessageId] = *event
 				}
 			}
 		}

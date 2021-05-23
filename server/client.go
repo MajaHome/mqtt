@@ -3,6 +3,7 @@ package server
 import (
 	"log"
 	"mqtt/packet"
+	"mqtt/transport"
 	"net"
 	"strconv"
 	"strings"
@@ -10,26 +11,26 @@ import (
 
 type Client struct {
 	conn         net.Conn
-	engineChan   chan *Event
-	clientChan   chan *Event
+	engineChan   chan *transport.Event
+	clientChan   chan *transport.Event
 	clientId     string
-	session      bool         // clean or persisten session
-	subscription []EventTopic // subscribed topics
+	session      bool                   // clean or persisten session
+	subscription []transport.EventTopic // subscribed topics
 	will         *packet.Message
 	stop         bool // flag to stop
 }
 
-func NewClient(id string, conn net.Conn, session bool, channel chan *Event) *Client {
+func NewClient(id string, conn net.Conn, session bool, channel chan *transport.Event) *Client {
 	return &Client{
 		conn:       conn,
 		engineChan: channel,
-		clientChan: make(chan *Event),
+		clientChan: make(chan *transport.Event),
 		clientId:   id,
 		session:    session,
 	}
 }
 
-func (c *Client) Start(server *Server) {
+func (c *Client) Start(server *transport.Server) {
 	var pkt packet.Packet
 	var err error
 
@@ -46,24 +47,24 @@ func (c *Client) Start(server *Server) {
 				log.Println("client receive message: " + e.String())
 
 				var res packet.Packet
-				switch e.packetType {
+				switch e.PacketType {
 				case packet.PUBLISH:
 					res = packet.NewPublish()
-					res.(*packet.PublishPacket).Id = e.messageId
-					res.(*packet.PublishPacket).Topic = e.topic.name
-					res.(*packet.PublishPacket).QoS = packet.QoS(e.topic.qos)
-					res.(*packet.PublishPacket).Payload = e.payload
-					res.(*packet.PublishPacket).Retain = e.retain
-					res.(*packet.PublishPacket).DUP = e.dublicate
+					res.(*packet.PublishPacket).Id = e.MessageId
+					res.(*packet.PublishPacket).Topic = e.Topic.Name
+					res.(*packet.PublishPacket).QoS = packet.QoS(e.Topic.Qos)
+					res.(*packet.PublishPacket).Payload = e.Payload
+					res.(*packet.PublishPacket).Retain = e.Retain
+					res.(*packet.PublishPacket).DUP = e.Dublicate
 				case packet.PUBACK:
 					res = packet.NewPubAck()
-					res.(*packet.PubAckPacket).Id = e.messageId
+					res.(*packet.PubAckPacket).Id = e.MessageId
 				case packet.PUBREC:
 					res = packet.NewPubRec()
-					res.(*packet.PubRecPacket).Id = e.messageId
+					res.(*packet.PubRecPacket).Id = e.MessageId
 				case packet.PUBCOMP:
 					res = packet.NewPubComp()
-					res.(*packet.PubCompPacket).Id = e.messageId
+					res.(*packet.PubCompPacket).Id = e.MessageId
 				default:
 					log.Println("wrong packet from engine")
 				}
@@ -71,7 +72,7 @@ func (c *Client) Start(server *Server) {
 				if err := server.WritePacket(c.conn, res); err != nil {
 					log.Println("client disconnect while write to socket")
 					c.Stop()
-					c.engineChan <- &Event{clientId: c.clientId} // send to engine unexpected disconnect
+					c.engineChan <- &transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
 					return
 				}
 			}
@@ -82,7 +83,7 @@ func (c *Client) Start(server *Server) {
 			c.Stop()
 
 			// send to engineChan unexpected disconnect
-			event := &Event{clientId: c.clientId}
+			event := &transport.Event{ClientId: c.clientId}
 			c.engineChan <- event
 
 			return
@@ -90,7 +91,7 @@ func (c *Client) Start(server *Server) {
 
 		switch pkt.Type() {
 		case packet.DISCONNECT:
-			event := &Event{clientId: c.clientId, packetType: pkt.Type()}
+			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
 			c.engineChan <- event
 			res := packet.NewDisconnect()
 			err = server.WritePacket(c.conn, res)
@@ -103,10 +104,10 @@ func (c *Client) Start(server *Server) {
 
 			var qos []packet.QoS
 			for _, topic := range req.Topics {
-				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
+				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				qos = append(qos, c.addSubscription(t))
 
-				event := &Event{clientId: c.clientId, packetType: pkt.Type(), topic: t}
+				event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
 				c.engineChan <- event
 			}
 
@@ -120,42 +121,42 @@ func (c *Client) Start(server *Server) {
 
 			res.Id = req.Id
 			for _, topic := range req.Topics {
-				t := EventTopic{name: strings.Trim(topic.Topic, "/"), qos: topic.QoS.Int()}
+				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				c.removeSubscription(t)
 				err = server.WritePacket(c.conn, res)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
-			event := &Event{
-				clientId:   c.clientId,
-				packetType: pkt.Type(),
-				messageId:  req.Id,
-				topic:      EventTopic{name: strings.Trim(req.Topic, "/")},
-				payload:    req.Payload,
-				qos:        req.QoS.Int(),
-				retain:     req.Retain,
-				dublicate:  req.DUP,
+			event := &transport.Event{
+				ClientId:   c.clientId,
+				PacketType: pkt.Type(),
+				MessageId:  req.Id,
+				Topic:      transport.EventTopic{Name: strings.Trim(req.Topic, "/")},
+				Payload:    req.Payload,
+				Qos:        req.QoS.Int(),
+				Retain:     req.Retain,
+				Dublicate:  req.DUP,
 			}
 			c.engineChan <- event
 		case packet.PUBREC:
 			req := pkt.(*packet.PubRecPacket)
 
-			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 			c.engineChan <- event
 		case packet.PUBREL:
 			req := pkt.(*packet.PubRelPacket)
 
-			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 			c.engineChan <- event
 		case packet.PUBACK:
 			req := pkt.(*packet.PubAckPacket)
 
-			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 			c.engineChan <- event
 		case packet.PUBCOMP:
 			req := pkt.(*packet.PubCompPacket)
 
-			event := &Event{clientId: c.clientId, packetType: pkt.Type(), messageId: req.Id}
+			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 			c.engineChan <- event
 		default:
 			err = packet.ErrUnknownPacket
@@ -166,7 +167,7 @@ func (c *Client) Start(server *Server) {
 			c.Stop()
 
 			// send to engineChan unexpected disconnect
-			event := &Event{clientId: c.clientId}
+			event := &transport.Event{ClientId: c.clientId}
 			c.engineChan <- event
 
 			return
@@ -179,27 +180,27 @@ func (c *Client) Stop() {
 	c.conn.Close()
 }
 
-func (c *Client) addSubscription(t EventTopic) packet.QoS {
+func (c *Client) addSubscription(t transport.EventTopic) packet.QoS {
 	// 0x80 clientChan qos clientChan case of error ?
 	// check for duplicate
 	for _, v := range c.subscription {
-		if v.name == t.name {
-			if v.qos != t.qos {
-				v.qos = t.qos
+		if v.Name == t.Name {
+			if v.Qos != t.Qos {
+				v.Qos = t.Qos
 			}
-			return packet.QoS(v.qos)
+			return packet.QoS(v.Qos)
 		}
 	}
 	c.subscription = append(c.subscription, t)
-	return packet.QoS(t.qos)
+	return packet.QoS(t.Qos)
 }
 
-func (c *Client) removeSubscription(t EventTopic) bool {
+func (c *Client) removeSubscription(t transport.EventTopic) bool {
 	if len(c.subscription) == 0 {
 		return false
 	}
 	for i, v := range c.subscription {
-		if v.name == t.name {
+		if v.Name == t.Name {
 			if len(c.subscription) > i+1 {
 				c.subscription[i] = c.subscription[len(c.subscription)-1]
 			}
@@ -220,7 +221,7 @@ func (c *Client) Contains(topic string) bool {
 
 	for _, subs := range c.subscription {
 		var i int = 0	// start from first level
-		s := strings.Split(subs.name, "/")
+		s := strings.Split(subs.Name, "/")
 
 		var found bool
 		for {
@@ -267,7 +268,7 @@ func (c *Client) String() string {
 	}
 	sb.WriteString("subscription: [")
 	for _, v := range c.subscription {
-		sb.WriteString("{ name: \"" + v.name + "\", qos: " + strconv.Itoa(int(v.qos)) + "}")
+		sb.WriteString("{ name: \"" + v.Name + "\", qos: " + strconv.Itoa(int(v.Qos)) + "}")
 	}
 	sb.WriteString("]")
 	sb.WriteString("}")
