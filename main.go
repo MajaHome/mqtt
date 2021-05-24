@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"log"
 	"github.com/MajaSuite/mqtt/server"
 	"github.com/MajaSuite/mqtt/transport"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"

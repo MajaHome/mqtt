@@ -32,11 +32,12 @@ func (c *ConnPacket) Type() Type {
 }
 
 func (c *ConnPacket) Length() int {
-	var l int = 2 /*hdr len*/ + 6 /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
+	var l int = 2 /*header*/ + 2 /*hdr len*/ + len("MQTT") /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
 	if c.Will != nil {
 		l += c.Will.Length()
 	}
-	l += 2 /*len*/ + len(c.Username) + 2 /*len*/ + len(c.Password)
+	l += 2 /*keepalive*/ + 2 /*cliendidlen*/ + len(c.ClientID) +
+		2 /*len*/ + len(c.Username) + 2 /*len*/ + len(c.Password)
 
 	return l
 }
@@ -58,12 +59,11 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	if err != nil {
 		return err
 	}
-	if c.Version == 4 && hdr != "MQTT" {
-		return ErrProtocolError
-	}
-
 	if c.Version != byte(4) {
 		return ErrUnsupportedVersion
+	}
+	if c.Version == 4 && hdr != "MQTT" {
+		return ErrProtocolError
 	}
 
 	flag, offset, err := ReadInt8(buf, offset)
@@ -168,11 +168,11 @@ func (c *ConnPacket) Pack() []byte {
 
 	offset = WriteInt8(buf, offset, byte(CONNECT)<<4)
 	offset = WriteInt8(buf, offset, byte(c.Length()))
-	offset = WriteInt16(buf, offset, 0x04) // 4 version, MQTT
+	offset = WriteInt16(buf, offset, uint16(len("MQTT")))
 
-	buf = append(buf, []byte("MQTT")...)
+	copy(buf[offset:], []byte("MQTT"))
 	offset += 4
-	offset = WriteInt8(buf, offset, byte(0x04))
+	offset = WriteInt8(buf, offset, c.Version)
 
 	var flag uint8 = 0x0
 	if len(c.Username) > 0 {
@@ -210,6 +210,7 @@ func (c *ConnPacket) Pack() []byte {
 
 	offset = WriteInt16(buf, offset, uint16(len(c.ClientID)))
 	copy(buf[offset:], c.ClientID)
+	offset += len(c.ClientID)
 
 	if c.Will != nil {
 		copy(buf[offset:], c.Will.Pack())
