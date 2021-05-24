@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"io"
 	"log"
-	"mqtt/packet"
+	"github.com/MajaSuite/mqtt/packet"
 	"net"
 )
 

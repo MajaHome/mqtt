@@ -2,8 +2,8 @@ package server
 
 import (
 	"log"
-	"mqtt/packet"
-	"mqtt/transport"
+	"github.com/MajaSuite/mqtt/packet"
+	"github.com/MajaSuite/mqtt/transport"
 	"net"
 	"strconv"
 	"strings"

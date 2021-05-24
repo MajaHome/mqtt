@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"mqtt/packet"
+	"github.com/MajaSuite/mqtt/packet"
 	"strconv"
 	"strings"
 )

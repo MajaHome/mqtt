@@ -2,13 +2,12 @@ package server
 
 import (
 	"crypto/rand"
+	"github.com/MajaSuite/mqtt/model"
+	"github.com/MajaSuite/mqtt/packet"
+	"github.com/MajaSuite/mqtt/transport"
 	"gorm.io/driver/sqlite"
-	_ "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"log"
-	"mqtt/model"
-	"mqtt/packet"
-	"mqtt/transport"
 	"net"
 )
 
