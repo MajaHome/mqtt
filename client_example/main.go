@@ -16,7 +16,7 @@ func main() {
 	s := packet.NewSubscribe()
 	s.Topics = []packet.SubscribePayload{
 		packet.SubscribePayload{Topic: "home/topic", QoS: 0},
-		packet.SubscribePayload{Topic: "home/another", QoS: 0},
+		packet.SubscribePayload{Topic: "home/another", QoS: 1},
 	}
 	client.Subscribe(s)
 
@@ -28,12 +28,13 @@ func main() {
 
 	p := packet.NewPublish()
 	p.Topic = "home/topic"
-	p.Payload = "{}"
-	client.Publish(p)
+	p.Payload = "{\"message\":\"test\"}"
+	p.QoS = 1
+	client.Sendout <- p
 
-	for e := range client.Broker {
-		if e.PacketType == packet.PUBLISH {
-			log.Println("NEW PUBLISH: ", e)
+	for pkt := range client.Broker {
+		if pkt.Type() == packet.PUBLISH {
+			log.Println("NEW PUBLISH: ", pkt)
 		}
 	}
 

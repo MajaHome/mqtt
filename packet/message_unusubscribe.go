@@ -30,7 +30,7 @@ func (u *UnSubscribePacket) Length() int {
 	for _, p := range u.Topics {
 		l += p.Length()
 	}
-	return 2 + 2 + len(u.Topics) + l
+	return 2 + l
 }
 
 func (u *UnSubscribePacket) Unpack(buf []byte) error {

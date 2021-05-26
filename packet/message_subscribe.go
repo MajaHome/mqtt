@@ -16,9 +16,9 @@ func (p *SubscribePayload) Length() int {
 
 func (p *SubscribePayload) Pack() []byte {
 	var offset int = 0
-	buf := make([]byte, p.Length()+2)
+	buf := make([]byte, p.Length())
 
-	offset = WriteInt16(buf, offset, uint16(p.Length()))
+	offset = WriteInt16(buf, offset, uint16(len(p.Topic)))
 	copy(buf[offset:], p.Topic)
 	offset += len(p.Topic)
 	offset = WriteInt8(buf, offset, uint8(p.QoS))
@@ -41,9 +41,7 @@ func NewSubscribe() *SubscribePacket {
 }
 
 func CreateSubscribe(buf []byte) *SubscribePacket {
-	return &SubscribePacket{
-		Header: buf,
-	}
+	return &SubscribePacket{Header: buf}
 }
 
 func (s *SubscribePacket) Type() Type {
@@ -55,35 +53,35 @@ func (s *SubscribePacket) Length() int {
 	for _, p := range s.Topics {
 		l += p.Length()
 	}
-	return 2 + 2 + len(s.Topics) + l
+	return 2/*id*/ + l
 }
 
 func (s *SubscribePacket) Unpack(buf []byte) error {
 	var offset int = 0
+	var err error
 
-	id, offset, err := ReadInt16(buf, offset)
+	s.Id, offset, err = ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
-	s.Id = id
 
-	var read uint8 = 2
-	for s.Header[1] > read {
-		topicLen, offset, err := ReadInt16(buf, offset)
+	for s.Header[1] > uint8(offset) {
+		var topicLen uint16
+		topicLen, offset, err = ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
 
-		topic, offset, err := ReadString(buf, offset, int(topicLen))
+		var topic string
+		topic, offset, err = ReadString(buf, offset, int(topicLen))
 		if err != nil {
 			return err
 		}
 
-		qos, offset, err := ReadInt8(buf, offset)
+		var qos uint8
+		qos, offset, err = ReadInt8(buf, offset)
 
 		s.Topics = append(s.Topics, SubscribePayload{Topic: topic, QoS: QoS(qos)})
-
-		read += uint8(2 + len(topic) + 1)
 	}
 
 	return nil
