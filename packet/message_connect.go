@@ -32,7 +32,7 @@ func (c *ConnPacket) Type() Type {
 }
 
 func (c *ConnPacket) Length() int {
-	var l int = 2 /*header*/ + 2 /*hdr len*/ + len("MQTT") /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
+	var l int = 2 /*hdr len*/ + len("MQTT") /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
 	if c.Will != nil {
 		l += c.Will.Length()
 	}
@@ -164,7 +164,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 
 func (c *ConnPacket) Pack() []byte {
 	offset := 0
-	buf := make([]byte, c.Length())
+	buf := make([]byte, c.Length()+2)
 
 	offset = WriteInt8(buf, offset, byte(CONNECT)<<4)
 	offset = WriteInt8(buf, offset, byte(c.Length()))

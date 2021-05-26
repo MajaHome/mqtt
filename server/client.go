@@ -1,9 +1,9 @@
 package server
 
 import (
-	"log"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -69,7 +69,7 @@ func (c *Client) Start(server *transport.Server) {
 					log.Println("wrong packet from engine")
 				}
 
-				if err := server.WritePacket(c.conn, res); err != nil {
+				if err := transport.WritePacket(c.conn, res); err != nil {
 					log.Println("client disconnect while write to socket")
 					c.Stop()
 					c.engineChan <- &transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
@@ -78,7 +78,7 @@ func (c *Client) Start(server *transport.Server) {
 			}
 		}()
 
-		if pkt, err = server.ReadPacket(c.conn); err != nil {
+		if pkt, err = transport.ReadPacket(c.conn); err != nil {
 			log.Println("err read packet, disconnected: ", err.Error())
 			c.Stop()
 
@@ -94,11 +94,11 @@ func (c *Client) Start(server *transport.Server) {
 			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
 			c.engineChan <- event
 			res := packet.NewDisconnect()
-			err = server.WritePacket(c.conn, res)
+			err = transport.WritePacket(c.conn, res)
 			c.Stop()
 		case packet.PING:
 			res := packet.NewPong()
-			err = server.WritePacket(c.conn, res)
+			err = transport.WritePacket(c.conn, res)
 		case packet.SUBSCRIBE:
 			req := pkt.(*packet.SubscribePacket)
 
@@ -114,7 +114,7 @@ func (c *Client) Start(server *transport.Server) {
 			res := packet.NewSubAck()
 			res.Id = req.Id
 			res.ReturnCodes = qos
-			err = server.WritePacket(c.conn, res)
+			err = transport.WritePacket(c.conn, res)
 		case packet.UNSUBSCRIBE:
 			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
@@ -123,7 +123,7 @@ func (c *Client) Start(server *transport.Server) {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				c.removeSubscription(t)
-				err = server.WritePacket(c.conn, res)
+				err = transport.WritePacket(c.conn, res)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)

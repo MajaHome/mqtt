@@ -57,7 +57,7 @@ func (e *Engine) Process(server *transport.Server) {
 
 		// process with CONNECT
 		go func() {
-			pkt, err := server.ReadPacket(conn)
+			pkt, err := transport.ReadPacket(conn)
 			if err != nil {
 				log.Println("err read packet", err.Error())
 				conn.Close()
@@ -105,7 +105,7 @@ func (e *Engine) Process(server *transport.Server) {
 					}
 				}
 
-				err = server.WritePacket(conn, res)
+				err = transport.WritePacket(conn, res)
 				if err != nil {
 					log.Println("err write packet", err.Error())
 					conn.Close()

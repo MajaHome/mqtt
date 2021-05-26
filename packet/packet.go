@@ -5,12 +5,15 @@ import (
 	"errors"
 )
 
-var ErrInvalidPacketType = errors.New("invalid packet type")
-var ErrProtocolError = errors.New("protocol error (not supported)")
-var ErrInvalidPacketLength = errors.New("invalid packet Len")
-var ErrUnknownPacket = errors.New("unknown packet type")
-var ErrReadFromBuf = errors.New("error read data from buffer")
-var ErrUnsupportedVersion = errors.New("unsupported mqtt version")
+var (
+	ErrInvalidPacketType = errors.New("invalid packet type")
+	ErrProtocolError = errors.New("protocol error (not supported)")
+	ErrInvalidPacketLength = errors.New("invalid packet Len")
+	ErrUnknownPacket = errors.New("unknown packet type")
+	ErrReadFromBuf = errors.New("error read data from buffer")
+	ErrUnsupportedVersion = errors.New("unsupported mqtt version")
+	ErrConnect = errors.New("error connect to server")
+)
 
 type Type byte
 
