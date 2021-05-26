@@ -47,5 +47,5 @@ func (p *PubRelPacket) Pack() []byte {
 }
 
 func (p *PubRelPacket) String() string {
-	return "Message PubRel: { id=" + strconv.Itoa(int(p.Id)) + " }"
+	return "Message PubRel: {id=" + strconv.Itoa(int(p.Id)) + " }"
 }

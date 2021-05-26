@@ -51,5 +51,5 @@ func (uack *UnSubAckPacket) Pack() []byte {
 }
 
 func (uack *UnSubAckPacket) String() string {
-	return "Message UnSubAck: { id=" + strconv.Itoa(int(uack.Id)) + "}"
+	return "Message UnSubAck: {id=" + strconv.Itoa(int(uack.Id)) + "}"
 }

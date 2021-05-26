@@ -47,5 +47,5 @@ func (p *PubCompPacket) Pack() []byte {
 }
 
 func (p *PubCompPacket) String() string {
-	return "Message PubComp: { id=" + strconv.Itoa(int(p.Id)) + " }"
+	return "Message PubComp: {id=" + strconv.Itoa(int(p.Id)) + " }"
 }

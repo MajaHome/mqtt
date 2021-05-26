@@ -37,7 +37,7 @@ func (c *Client) Start(server *transport.Server) {
 	c.stop = false
 	for {
 		if c.stop {
-			log.Println("stop " + c.clientId)
+			log.Printf("client %s disconnected\n" + c.clientId)
 			return
 		}
 

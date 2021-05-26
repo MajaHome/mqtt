@@ -1,16 +1,20 @@
 # mqtt server
 
 ## Status
-CONNECT, SUBSCRIBE, PUBLISH (with any qos) seems work fine.
-retain messages and sending will under development
-also persistent still doesn't work (temporary;)
+CONNECT, SUBSCRIBE, PUBLISH (with any qos) and retain messages (persisted!) seems work fine.
+Add mqtt client implementation.
+
+TODO: sending *will message* under development
+
 
 ## Purpose
 This is my implementation of mqtt server for Maja Suite project. Mqtt server will be central queue for all messages 
 from connected devices and hub.
 
-Drivers (sonoff, xiaomi or zigbee) will connect to mqtt server at start and push all messages to mqtt. Hub will receive,
-manage and push messages back. Interconnect beetween devices different types will be managed by mqtt server.
+Managers (wifi, bluetooth or zigbee) will connect to mqtt server at start and push all messages to mqtt. So, interconnect
+beetween devices different types will be managed by mqtt server.
+
+Hub will be responsible only for automation, receive messages, doing some business logic and and push result messages back.
 
 ## Save data on restart
 Server use sqlite database to store username/password as well as will/retain messages. So restarts should be clear.

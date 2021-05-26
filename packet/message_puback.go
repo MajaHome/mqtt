@@ -49,5 +49,5 @@ func (pack *PubAckPacket) Pack() []byte {
 }
 
 func (pack *PubAckPacket) String() string {
-	return "Message PubAck: { id=" + strconv.Itoa(int(pack.Id)) + "}"
+	return "Message PubAck: {id=" + strconv.Itoa(int(pack.Id)) + "}"
 }

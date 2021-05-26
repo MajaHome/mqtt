@@ -73,6 +73,6 @@ func (cack *ConnAckPacket) Pack() []byte {
 }
 
 func (cack *ConnAckPacket) String() string {
-	return "Message ConnAck: { session: " + strconv.FormatBool(cack.Session) + ", code:" +
+	return "Message ConnAck: {session: " + strconv.FormatBool(cack.Session) + ", code: " +
 		strconv.Itoa(int(cack.ReturnCode)) + "}"
 }

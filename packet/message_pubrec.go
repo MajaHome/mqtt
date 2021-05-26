@@ -47,5 +47,5 @@ func (p *PubRecPacket) Pack() []byte {
 }
 
 func (p *PubRecPacket) String() string {
-	return "Message PubRec: { id=" + strconv.Itoa(int(p.Id)) + " }"
+	return "Message PubRec: {id=" + strconv.Itoa(int(p.Id)) + " }"
 }
