@@ -1,18 +1,18 @@
 package broker
 
 import (
+	"github.com/MajaSuite/mqtt/packet"
+	"github.com/MajaSuite/mqtt/transport"
 	"log"
 	"net"
 	"strconv"
 	"strings"
-	"github.com/MajaSuite/mqtt/packet"
-	"github.com/MajaSuite/mqtt/transport"
 )
 
 type Client struct {
 	conn         net.Conn
-	engineChan   chan *transport.Event
-	clientChan   chan *transport.Event
+	engineChan   chan transport.Event
+	clientChan   chan transport.Event
 	clientId     string
 	session      bool                   // clean or persisten session
 	subscription []transport.EventTopic // subscribed topics
@@ -20,11 +20,11 @@ type Client struct {
 	stop         bool // flag to stop
 }
 
-func NewClient(id string, conn net.Conn, session bool, channel chan *transport.Event) *Client {
+func NewClient(id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
 	return &Client{
 		conn:       conn,
 		engineChan: channel,
-		clientChan: make(chan *transport.Event),
+		clientChan: make(chan transport.Event),
 		clientId:   id,
 		session:    session,
 	}
@@ -70,9 +70,9 @@ func (c *Client) Start() {
 				}
 
 				if err := transport.WritePacket(c.conn, res); err != nil {
+					c.engineChan <- transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
 					log.Println("client disconnect while write to socket")
 					c.Stop()
-					c.engineChan <- &transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
 					return
 				}
 			}
@@ -83,22 +83,18 @@ func (c *Client) Start() {
 			c.Stop()
 
 			// send to engineChan unexpected disconnect
-			event := &transport.Event{ClientId: c.clientId}
-			c.engineChan <- event
+			c.engineChan <- transport.Event{ClientId: c.clientId}
 
 			return
 		}
 
 		switch pkt.Type() {
 		case packet.DISCONNECT:
-			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
-			c.engineChan <- event
-			res := packet.NewDisconnect()
-			err = transport.WritePacket(c.conn, res)
+			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
+			err = transport.WritePacket(c.conn, packet.NewDisconnect())
 			c.Stop()
 		case packet.PING:
-			res := packet.NewPong()
-			err = transport.WritePacket(c.conn, res)
+			err = transport.WritePacket(c.conn, packet.NewPong())
 		case packet.SUBSCRIBE:
 			req := pkt.(*packet.SubscribePacket)
 
@@ -106,9 +102,7 @@ func (c *Client) Start() {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				qos = append(qos, c.addSubscription(t))
-
-				event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
-				c.engineChan <- event
+				c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
 			}
 
 			res := packet.NewSubAck()
@@ -127,7 +121,7 @@ func (c *Client) Start() {
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
-			event := &transport.Event{
+			c.engineChan <- transport.Event{
 				ClientId:   c.clientId,
 				PacketType: pkt.Type(),
 				MessageId:  req.Id,
@@ -137,27 +131,18 @@ func (c *Client) Start() {
 				Retain:     req.Retain,
 				Dublicate:  req.DUP,
 			}
-			c.engineChan <- event
 		case packet.PUBREC:
 			req := pkt.(*packet.PubRecPacket)
-
-			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
-			c.engineChan <- event
+			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		case packet.PUBREL:
 			req := pkt.(*packet.PubRelPacket)
-
-			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
-			c.engineChan <- event
+			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		case packet.PUBACK:
 			req := pkt.(*packet.PubAckPacket)
-
-			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
-			c.engineChan <- event
+			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		case packet.PUBCOMP:
 			req := pkt.(*packet.PubCompPacket)
-
-			event := &transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
-			c.engineChan <- event
+			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		default:
 			err = packet.ErrUnknownPacket
 		}
@@ -167,8 +152,7 @@ func (c *Client) Start() {
 			c.Stop()
 
 			// send to engineChan unexpected disconnect
-			event := &transport.Event{ClientId: c.clientId}
-			c.engineChan <- event
+			c.engineChan <- transport.Event{ClientId: c.clientId}
 
 			return
 		}

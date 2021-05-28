@@ -4,6 +4,7 @@ import (
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
 	"log"
+	"strconv"
 	"time"
 )
 
@@ -26,12 +27,15 @@ func main() {
 	}
 	client.Unsubscribe(u)
 
+    for i := 0; i < 50; i++ {
 	p := packet.NewPublish()
+	p.Id = uint16(i)
 	p.Topic = "home/topic"
-	p.Payload = "{\"message\":\"test\"}"
+	p.Payload = "{\"message\":\""+strconv.Itoa(i)+"\"}"
 	p.QoS = 1
 	client.Sendout <- p
-
+    }
+    
 	for pkt := range client.Broker {
 		if pkt.Type() == packet.PUBLISH {
 			log.Println("NEW PUBLISH: ", pkt)

@@ -1,20 +1,20 @@
 package broker
 
 import (
-	"log"
-	"net"
 	"crypto/rand"
-	"gorm.io/gorm"
-	"gorm.io/driver/sqlite"
 	"github.com/MajaSuite/mqtt/model"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"log"
+	"net"
 )
 
 type Engine struct {
 	db       *gorm.DB
 	clients  map[string]*Client
-	channel  chan *transport.Event
+	channel  chan transport.Event
 	send     map[uint16]transport.Event
 	delivery map[uint16]transport.Event
 	retain   map[string]transport.Event
@@ -35,7 +35,7 @@ func NewEngine() *Engine {
 	e := &Engine{
 		db:       conn,
 		clients:  make(map[string]*Client),
-		channel:  make(chan *transport.Event),
+		channel:  make(chan transport.Event),
 		send:     make(map[uint16]transport.Event),
 		delivery: make(map[uint16]transport.Event),
 		retain:   make(map[string]transport.Event),
@@ -147,8 +147,9 @@ func (e *Engine) manageClients() {
 			var retain model.RetainMessage
 			if row, err := e.db.Where(&model.RetainMessage{Topic: event.Topic.Name}).Find(&retain).Rows(); err == nil {
 				for row.Next() {
-					revent := &transport.Event{MessageId: retain.MessageId, Topic: transport.EventTopic{Name: retain.Topic, Qos: retain.Qos},
+					revent := transport.Event{MessageId: retain.MessageId, Topic: transport.EventTopic{Name: retain.Topic, Qos: retain.Qos},
 						Payload: retain.Payload, Qos: retain.Qos, Retain: true}
+					revent.ClientId = event.ClientId
 					e.publishMessage(revent)
 				}
 			}
@@ -167,29 +168,36 @@ func (e *Engine) manageClients() {
 		case packet.PUBLISH: // in
 			client := e.clients[event.ClientId]
 			if event.Retain {
-				retain := model.RetainMessage{MessageId: event.MessageId, Topic: event.Topic.Name,
-					Payload: event.Payload, Qos: event.Topic.Qos}
-				e.db.Create(&retain)
+				if event.Payload != "" {
+					// save retain message
+					retain := model.RetainMessage{MessageId: event.MessageId, Topic: event.Topic.Name,
+						Payload: event.Payload, Qos: event.Topic.Qos}
+					e.db.Create(&retain)
+				} else {
+					// remove retain message
+					e.db.Where("topic = ? and qos = ?", event.Topic.Name, event.Qos).Delete(&model.RetainMessage{})
+					continue
+				}
 			}
 
 			switch packet.QoS(event.Qos) {
 			case packet.AtMostOnce:
 				e.publishMessage(event)
 			case packet.AtLeastOnce: // PUBLISH -> PUBACK
-				res := &transport.Event{PacketType: packet.PUBACK, MessageId: event.MessageId, ClientId: event.ClientId}
+				res := transport.Event{PacketType: packet.PUBACK, MessageId: event.MessageId, ClientId: event.ClientId}
 				client.clientChan <- res
 
 				// save message
-				e.delivery[event.MessageId] = *res
+				e.delivery[event.MessageId] = res
 
 				// send published message to all subscribed clients
 				e.publishMessage(event)
 			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
-				res := &transport.Event{PacketType: packet.PUBREC, MessageId: event.MessageId, ClientId: event.ClientId}
-				client.clientChan <- res
+				client.clientChan <- transport.Event{PacketType: packet.PUBREC, MessageId: event.MessageId,
+					ClientId: event.ClientId}
 
 				// record packet in delivery queue
-				e.delivery[event.MessageId] = *event
+				e.delivery[event.MessageId] = event
 			}
 		case packet.PUBACK: // out
 			// we receive answer on publish command,
@@ -205,8 +213,8 @@ func (e *Engine) manageClients() {
 			answer, ok := e.send[event.MessageId]
 			if ok && event.ClientId == answer.ClientId {
 				// send PUBREL
-				res := &transport.Event{PacketType: packet.PUBREL, ClientId: event.ClientId, MessageId: event.MessageId}
-				e.clients[event.ClientId].clientChan <- res
+				e.clients[event.ClientId].clientChan <- transport.Event{PacketType: packet.PUBREL,
+					ClientId: event.ClientId, MessageId: event.MessageId}
 			} else {
 				log.Printf("error process PUBREC, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
@@ -214,11 +222,11 @@ func (e *Engine) manageClients() {
 			event, ok := e.delivery[event.MessageId]
 			if ok {
 				// send answer PUBCOMP
-				res := &transport.Event{PacketType: packet.PUBCOMP, MessageId: event.MessageId, ClientId: event.ClientId}
-				e.clients[event.ClientId].clientChan <- res
+				e.clients[event.ClientId].clientChan <- transport.Event{PacketType: packet.PUBCOMP,
+					MessageId: event.MessageId, ClientId: event.ClientId}
 
 				// send publish
-				e.publishMessage(&event)
+				e.publishMessage(event)
 
 				// remove from delivery queue
 				delete(e.delivery, event.MessageId)
@@ -241,7 +249,7 @@ func (e *Engine) manageClients() {
 			if client != nil {
 				// if will message is set for client - send this message to all clients
 				if client.will != nil {
-					will := &transport.Event{
+					will := transport.Event{
 						Topic:   transport.EventTopic{Name: client.will.Topic},
 						Payload: client.will.Payload,
 						Qos:     client.will.QoS.Int(),
@@ -263,7 +271,7 @@ func (e *Engine) manageClients() {
 	}
 }
 
-func (e *Engine) publishMessage(event *transport.Event) {
+func (e *Engine) publishMessage(event transport.Event) {
 	event.PacketType = packet.PUBLISH
 
 	for _, client := range e.clients {
@@ -272,7 +280,7 @@ func (e *Engine) publishMessage(event *transport.Event) {
 				client.clientChan <- event
 
 				if event.Qos > 0 {
-					e.send[event.MessageId] = *event
+					e.send[event.MessageId] = event
 				}
 			}
 		}
