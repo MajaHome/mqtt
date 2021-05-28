@@ -1,14 +1,14 @@
-package server
+package broker
 
 import (
+	"log"
+	"net"
 	"crypto/rand"
+	"gorm.io/gorm"
+	"gorm.io/driver/sqlite"
 	"github.com/MajaSuite/mqtt/model"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"log"
-	"net"
 )
 
 type Engine struct {
@@ -42,11 +42,10 @@ func NewEngine() *Engine {
 	}
 
 	go e.manageClients()
-
 	return e
 }
 
-func (e *Engine) Process(server *transport.Server) {
+func (e *Engine) ManageServer(server *Server) {
 	for {
 		conn, err := server.Accept()
 		if err != nil {
@@ -122,7 +121,7 @@ func (e *Engine) Process(server *transport.Server) {
 				// TODO Restore subscription
 
 				// start manage client
-				go client.Start(server)
+				go client.Start()
 			} else {
 				log.Println("wrong packet. expect CONNECT")
 				conn.Close()
@@ -134,7 +133,7 @@ func (e *Engine) Process(server *transport.Server) {
 
 func (e *Engine) manageClients() {
 	for event := range e.channel {
-		log.Println("engineChan receive message: " + event.String())
+		log.Println("engine receive message: " + event.String())
 
 		switch event.PacketType {
 		case packet.DISCONNECT:
@@ -172,9 +171,6 @@ func (e *Engine) manageClients() {
 					Payload: event.Payload, Qos: event.Topic.Qos}
 				e.db.Create(&retain)
 			}
-
-			// todo if topic has higher qos - increase qos in published message. ps. not sure. can send message to
-			// unsubscribed topic
 
 			switch packet.QoS(event.Qos) {
 			case packet.AtMostOnce:
@@ -239,7 +235,7 @@ func (e *Engine) manageClients() {
 				log.Printf("error process PUBCOMP, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		default:
-			log.Println("engineChan: unexpected disconnect")
+			log.Println("engine: unexpected disconnect")
 
 			client := e.clients[event.ClientId]
 			if client != nil {

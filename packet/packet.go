@@ -1,21 +1,8 @@
 package packet
 
 import (
-	"encoding/binary"
 	"errors"
 )
-
-var (
-	ErrInvalidPacketType = errors.New("invalid packet type")
-	ErrProtocolError = errors.New("protocol error (not supported)")
-	ErrInvalidPacketLength = errors.New("invalid packet Len")
-	ErrUnknownPacket = errors.New("unknown packet type")
-	ErrReadFromBuf = errors.New("error read data from buffer")
-	ErrUnsupportedVersion = errors.New("unsupported mqtt version")
-	ErrConnect = errors.New("error connect to server")
-)
-
-type Type byte
 
 const (
 	RESERVED Type = iota
@@ -35,6 +22,16 @@ const (
 	DISCONNECT
 )
 
+var (
+	ErrInvalidPacketType = errors.New("invalid packet type")
+	ErrProtocolError = errors.New("protocol error (not supported)")
+	ErrInvalidPacketLength = errors.New("invalid packet Len")
+	ErrUnknownPacket = errors.New("unknown packet type")
+	ErrReadFromBuf = errors.New("error read data from buffer")
+	ErrUnsupportedVersion = errors.New("unsupported mqtt version")
+	ErrConnect = errors.New("error connect to broker")
+)
+
 type Packet interface {
 	Type() Type
 	Length() int
@@ -43,10 +40,7 @@ type Packet interface {
 	String() string
 }
 
-func Types() []Type {
-	return []Type{RESERVED, CONNECT, CONNACK, PUBLISH, PUBACK, PUBREC, PUBREL, PUBCOMP, SUBSCRIBE, SUBACK,
-		UNSUBSCRIBE, UNSUBACK, PING, PONG, DISCONNECT}
-}
+type Type byte
 
 func (t Type) String() string {
 	switch t {
@@ -83,124 +77,39 @@ func (t Type) String() string {
 	return "Unknown"
 }
 
-func Create(buf []byte) (Packet, error) {
+func Create(buf []byte) Packet {
 	t := Type(buf[0] >> 4)
 
 	switch t {
 	case CONNECT:
-		return CreateConnect(buf), nil
+		return CreateConnect(buf)
 	case CONNACK:
-		return CreateConnAck(buf), nil
+		return CreateConnAck(buf)
 	case PUBLISH:
-		return CreatePublish(buf), nil
+		return CreatePublish(buf)
 	case PUBACK:
-		return CreatePubAck(buf), nil
+		return CreatePubAck(buf)
 	case PUBREC:
-		return CreatePubRec(buf), nil
+		return CreatePubRec(buf)
 	case PUBREL:
-		return CreatePubRel(buf), nil
+		return CreatePubRel(buf)
 	case PUBCOMP:
-		return CreatePubComp(buf), nil
+		return CreatePubComp(buf)
 	case SUBSCRIBE:
-		return CreateSubscribe(buf), nil
+		return CreateSubscribe(buf)
 	case SUBACK:
-		return CreateSubAck(buf), nil
+		return CreateSubAck(buf)
 	case UNSUBSCRIBE:
-		return CreateUnSubscribe(buf), nil
+		return CreateUnSubscribe(buf)
 	case UNSUBACK:
-		return CreateUnSubAck(buf), nil
+		return CreateUnSubAck(buf)
 	case PING:
-		return CreatePing(buf), nil
+		return CreatePing(buf)
 	case PONG:
-		return CreatePong(buf), nil
+		return CreatePong(buf)
 	case DISCONNECT:
-		return CreateDisconnect(buf), nil
-	}
-
-	return nil, ErrInvalidPacketType
-}
-
-func NewPacket(t Type) Packet {
-	switch t {
-	case CONNECT:
-		return NewConnect()
-	case CONNACK:
-		return NewConnAck()
-	case PUBLISH:
-		return NewPublish()
-	case PUBACK:
-		return NewPubAck()
-	case PUBREC:
-		return NewPubRec()
-	case PUBREL:
-		return NewPubRel()
-	case PUBCOMP:
-		return NewPubComp()
-	case SUBSCRIBE:
-		return NewSubscribe()
-	case SUBACK:
-		return NewSubAck()
-	case UNSUBSCRIBE:
-		return NewUnSub()
-	case UNSUBACK:
-		return NewUnSubAck()
-	case PING:
-		return NewPing()
-	case PONG:
-		return NewPong()
-	case DISCONNECT:
-		return NewDisconnect()
+		return CreateDisconnect(buf)
 	}
 
 	return nil
-}
-
-func ReadInt8(buf []byte, offset int) (uint8, int, error) {
-	var value uint8
-
-	if len(buf) >= (offset + 1) {
-		value = buf[offset]
-		return value, offset + 1, nil
-	}
-
-	return 0, offset, ErrReadFromBuf
-}
-
-func ReadInt16(buf []byte, offset int) (uint16, int, error) {
-	var value uint16
-
-	if len(buf) >= (offset + 2) {
-		value = uint16(buf[offset+1]) | uint16(buf[offset])<<8
-		return value, offset + 2, nil
-	}
-
-	return 0, offset, ErrReadFromBuf
-}
-
-func ReadBytes(buf []byte, offset int, length int) ([]byte, int, error) {
-	var value []byte
-
-	if len(buf) >= (offset + length) {
-		value = buf[offset : offset+length]
-		return value, offset + length, nil
-	}
-
-	return nil, offset, ErrReadFromBuf
-}
-
-func ReadString(buf []byte, offset int, length int) (string, int, error) {
-	s, i, e := ReadBytes(buf, offset, length)
-	return string(s), i, e
-}
-
-func WriteInt8(buf []byte, offset int, value uint8) int {
-	buf[offset] = value
-	offset++
-	return offset
-}
-
-func WriteInt16(buf []byte, offset int, value uint16) int {
-	binary.BigEndian.PutUint16(buf[offset:], value)
-	offset += 2
-	return offset
 }

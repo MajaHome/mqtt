@@ -1,10 +1,10 @@
 package transport
 
 import (
-	"github.com/MajaSuite/mqtt/packet"
 	"log"
 	"net"
 	"time"
+	"github.com/MajaSuite/mqtt/packet"
 )
 
 type MqttClient struct {
@@ -91,26 +91,26 @@ func (c *MqttClient) client() {
 			for pkt := range c.Sendout {
 				switch pkt.Type() {
 				case packet.DISCONNECT:
-					log.Println("disconnect from server")
+					log.Println("disconnect from broker")
 					WritePacket(c.conn, pkt)
 				case packet.PING:
 					if err := WritePacket(c.conn, pkt); err != nil {
-						log.Println("error send packet to broker, server drop connection")
+						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.SUBSCRIBE:
 					if err := WritePacket(c.conn, pkt); err != nil {
-						log.Println("error send packet to broker, server drop connection")
+						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.UNSUBSCRIBE:
 					if err := WritePacket(c.conn, pkt); err != nil {
-						log.Println("error send packet to broker, server drop connection")
+						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.PUBLISH:
 					if err := WritePacket(c.conn, pkt); err != nil {
-						log.Println("error send packet to broker, server drop connection")
+						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				}

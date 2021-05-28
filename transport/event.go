@@ -1,9 +1,9 @@
 package transport
 
 import (
-	"github.com/MajaSuite/mqtt/packet"
 	"strconv"
 	"strings"
+	"github.com/MajaSuite/mqtt/packet"
 )
 
 type Event struct {

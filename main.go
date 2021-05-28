@@ -2,30 +2,29 @@ package main
 
 import (
 	"flag"
-	"github.com/MajaSuite/mqtt/server"
-	"github.com/MajaSuite/mqtt/transport"
 	"log"
 	"os"
-	"os/signal"
 	"syscall"
+	"os/signal"
+	"github.com/MajaSuite/mqtt/broker"
 )
 
 var (
-	cert = flag.String("cert", "server.crt", "path to server certificate")
-	key  = flag.String("key", "server.key", "path to server private key")
+	cert = flag.String("cert", "broker.crt", "path to broker certificate")
+	key  = flag.String("key", "broker.key", "path to broker private key")
 )
 
 func main() {
 	flag.Parse()
 	log.Println("Starting broker ...")
 
-	mqtt, err := transport.RunMqtt()
+	mqtt, err := broker.RunMqtt()
 	if err != nil {
-		log.Panic("error running mqtt server", err)
+		log.Panic("error running mqtt broker", err)
 	}
 
-	engine := server.NewEngine()
-	engine.Process(mqtt)
+	engine := broker.NewEngine()
+	engine.ManageServer(mqtt)
 
 	finish := make(chan os.Signal, 1)
 	signal.Notify(finish, syscall.SIGINT, syscall.SIGTERM)

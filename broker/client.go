@@ -1,12 +1,12 @@
-package server
+package broker
 
 import (
-	"github.com/MajaSuite/mqtt/packet"
-	"github.com/MajaSuite/mqtt/transport"
 	"log"
 	"net"
 	"strconv"
 	"strings"
+	"github.com/MajaSuite/mqtt/packet"
+	"github.com/MajaSuite/mqtt/transport"
 )
 
 type Client struct {
@@ -30,7 +30,7 @@ func NewClient(id string, conn net.Conn, session bool, channel chan *transport.E
 	}
 }
 
-func (c *Client) Start(server *transport.Server) {
+func (c *Client) Start() {
 	var pkt packet.Packet
 	var err error
 
@@ -181,7 +181,8 @@ func (c *Client) Stop() {
 }
 
 func (c *Client) addSubscription(t transport.EventTopic) packet.QoS {
-	// 0x80 clientChan qos clientChan case of error ?
+	// send 0x80 in qos in case of error
+
 	// check for duplicate
 	for _, v := range c.subscription {
 		if v.Name == t.Name {
@@ -246,7 +247,7 @@ func (c *Client) Contains(topic string) bool {
 				continue
 			}
 
-			// doen't match
+			// doesn't match
 			break
 		}
 

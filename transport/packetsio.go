@@ -17,8 +17,8 @@ func ReadPacket(conn net.Conn) (packet.Packet, error) {
 
 	log.Println("read header:\n", hex.Dump(header))
 
-	pkt, err := packet.Create(header)
-	if err != nil {
+	pkt := packet.Create(header)
+	if pkt == nil {
 		log.Println("read: error create packet")
 		return nil, packet.ErrUnknownPacket
 	}
