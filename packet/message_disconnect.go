@@ -1,13 +1,13 @@
 package packet
 
 type DisconnectPacket struct {
-	Header []byte
+	Header byte
 }
 
 func NewDisconnect() *DisconnectPacket {
 	return &DisconnectPacket{}
 }
-func CreateDisconnect(buf []byte) *DisconnectPacket {
+func CreateDisconnect(buf byte) *DisconnectPacket {
 	return &DisconnectPacket{
 		Header: buf,
 	}
@@ -35,5 +35,5 @@ func (cack *DisconnectPacket) Pack() []byte {
 }
 
 func (cack *DisconnectPacket) String() string {
-	return "Message Disconnect: {}"
+	return "Disconnect: {}"
 }

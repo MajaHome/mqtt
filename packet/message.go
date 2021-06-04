@@ -1,39 +1,39 @@
 package packet
 
 import (
-	"strconv"
+	"fmt"
 )
 
 type Message struct {
-	Topic     string
+	Flag      bool
 	QoS       QoS
 	Retain    bool
+	Dublicate bool
+	Topic     string
 	Payload   string
-	Dublicate bool // dublicate packet
-	Flag      bool // will message flag
 }
 
 func (m *Message) Length() int {
-	return len(m.Topic) + 2 + len(m.Payload) + 2
+	return len(m.Topic) + 2/*topicLen*/ + len(m.Payload) + 2/*payload len*/
 }
 
 func (m *Message) Pack() []byte {
-	var offset int = 0
 	buf := make([]byte, m.Length())
 
-	offset = WriteInt16(buf, offset, uint16(len(m.Topic)))
-	copy(buf[offset:], m.Topic)
-	offset += len(m.Topic)
+	offset := WriteString(buf, 0, m.Topic)
+	//offset = WriteInt16(buf, offset, uint16(len(m.Topic)))
+	//copy(buf[offset:], m.Topic)
+	//offset += len(m.Topic)
 
-	offset = WriteInt16(buf, offset, uint16(len(m.Payload)))
-	copy(buf[offset:], m.Payload)
-	offset += len(m.Payload)
+	offset = WriteString(buf, offset, m.Payload)
+	//offset = WriteInt16(buf, offset, uint16(len(m.Payload)))
+	//copy(buf[offset:], m.Payload)
+	//offset += len(m.Payload)
 
 	return buf
 }
 
 func (m *Message) String() string {
-	return "Message {topic=" + m.Topic + ", QoS=" + m.QoS.String() + ", retain=" + strconv.FormatBool(m.Retain) +
-		", payload=" + m.Payload + ", dublicate=" + strconv.FormatBool(m.Dublicate) + ", flag=" +
-		strconv.FormatBool(m.Flag) + "}"
+	return fmt.Sprintf("message: {topic: %s, qos: %d, retain: %v, dup: %v, flag: %v, payload: %s}",
+		m.Topic, m.QoS.Int(), m.Retain, m.Dublicate, m.Flag, m.Payload)
 }

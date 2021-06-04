@@ -1,12 +1,11 @@
 package packet
 
 import (
-	"strconv"
-	"strings"
+	"fmt"
 )
 
 type UnSubscribePacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 	Topics []SubscribePayload
 }
@@ -15,9 +14,10 @@ func NewUnSub() *UnSubscribePacket {
 	return &UnSubscribePacket{}
 }
 
-func CreateUnSubscribe(buf []byte) *UnSubscribePacket {
+func CreateUnSubscribe(buf byte) *UnSubscribePacket {
 	return &UnSubscribePacket{
 		Header: buf,
+		Topics: []SubscribePayload{},
 	}
 }
 
@@ -26,68 +26,66 @@ func (u *UnSubscribePacket) Type() Type {
 }
 
 func (u *UnSubscribePacket) Length() int {
-	var l int = 0
+	var l int
 	for _, p := range u.Topics {
 		l += p.Length()
 	}
-	return 2 + l
+	return 2/*id*/ + l
 }
 
 func (u *UnSubscribePacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	id, offset, err := ReadInt16(buf, offset)
+	id, offset, err := ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
 	u.Id = id
 
-	var read uint8 = 2
-	for u.Header[1] > read {
-		topicLen, offset, err := ReadInt16(buf, offset)
+	for left := len(buf)-2; left > 0;  {
+		var topicLen uint16
+		var topic string
+		var qos uint8
+
+		topicLen, offset, err = ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
 
-		topic, offset, err := ReadString(buf, offset, int(topicLen))
+		topic, offset, err = ReadString(buf, offset, int(topicLen))
 		if err != nil {
 			return err
 		}
 
-		qos, offset, err := ReadInt8(buf, offset)
+		qos, offset, err = ReadInt8(buf, offset)
 
 		u.Topics = append(u.Topics, SubscribePayload{Topic: topic, QoS: QoS(qos)})
-
-		read += uint8(2 + len(topic) + 1)
+		left -= 2+len(topic)+1
 	}
 
 	return nil
 }
 
 func (u *UnSubscribePacket) Pack() []byte {
-	var offset int = 0
-	buf := make([]byte, 4)
-	offset = WriteInt8(buf, offset, byte(UNSUBSCRIBE)<<4)
-	offset = WriteInt8(buf, offset, byte(u.Length()))
+	lenBuff := WriteLength(u.Length())
+	buf := make([]byte, 1 + len(lenBuff) + u.Length())
+
+	offset := WriteInt8(buf, 0, byte(UNSUBSCRIBE)<<4)
+	offset = WriteBytes(buf, offset, lenBuff)
 	offset = WriteInt16(buf, offset, u.Id)
 
 	for _, t := range u.Topics {
-		buf = append(buf, t.Pack()...)
+		data := t.Pack()
+		copy(buf[offset:], data)
+		offset += len(data)
 	}
 
 	return buf
 }
 
 func (u *UnSubscribePacket) String() string {
-	var sb strings.Builder
-
-	sb.WriteString("Message Unsubscribe: {id:")
-	sb.WriteString(strconv.Itoa(int(u.Id)))
+	var topics string
 	for _, t := range u.Topics {
-		sb.WriteString(", payload: ")
-		sb.WriteString(t.String())
+		topics += t.String()+", "
 	}
-	sb.WriteString("}")
 
-	return sb.String()
+	return fmt.Sprintf("Unsubscribe: {id: %d, topics: [%s]}", u.Id, topics)
 }

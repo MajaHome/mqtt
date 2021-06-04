@@ -1,7 +1,6 @@
 package broker
 
 import (
-	"crypto/rand"
 	"github.com/MajaSuite/mqtt/model"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
@@ -41,7 +40,7 @@ func NewEngine() *Engine {
 		retain:   make(map[string]transport.Event),
 	}
 
-	go e.manageClients()
+	go e.clientThread()
 	return e
 }
 
@@ -56,7 +55,7 @@ func (e *Engine) ManageServer(server *Server) {
 
 		// process with CONNECT
 		go func() {
-			pkt, err := transport.ReadPacket(conn)
+			pkt, err := packet.ReadPacket(conn)
 			if err != nil {
 				log.Println("err read packet", err.Error())
 				conn.Close()
@@ -67,6 +66,7 @@ func (e *Engine) ManageServer(server *Server) {
 				res := packet.NewConnAck()
 
 				connPacket := pkt.(*packet.ConnPacket)
+				var id string = connPacket.ClientID
 
 				// check version, now only 4 (3.11)
 				if connPacket.Version != 4 {
@@ -74,7 +74,7 @@ func (e *Engine) ManageServer(server *Server) {
 					return
 				}
 
-				if len(connPacket.ClientID) == 0 && !connPacket.CleanSession {
+				if len(id) == 0 && !connPacket.CleanSession {
 					res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
 					return
 				}
@@ -84,27 +84,29 @@ func (e *Engine) ManageServer(server *Server) {
 				// check authorization
 				if len(connPacket.Username) > 0 {
 					var user model.User
-					result := e.db.Take(&user, "user_name = ? and password = ?", connPacket.Username, connPacket.Password)
+					result := e.db.Take(&user, "user_name = ? and password = ?", connPacket.Username,
+						connPacket.Password)
+
 					if result.Error != nil {
 						log.Println("username/password is wrong")
 						res.ReturnCode = uint8(packet.ConnectBadUserPass)
+					} else {
+						if id == "" {
+							id = connPacket.Username
+						}
 					}
 				}
 
 				var client *Client
 				if res.ReturnCode == uint8(packet.ConnectAccepted) {
-					res.Session = false
-					if !connPacket.CleanSession && e.clients[connPacket.ClientID] != nil {
-						res.Session = !connPacket.CleanSession
-					}
-
-					client = e.saveClient(connPacket.ClientID, conn, !connPacket.CleanSession)
+					res.Session = !connPacket.CleanSession
+					client = e.saveClient(id, conn, res.Session)
 					if connPacket.Will != nil && res.Session {
 						client.will = connPacket.Will
 					}
 				}
 
-				err = transport.WritePacket(conn, res)
+				err = packet.WritePacket(conn, res)
 				if err != nil {
 					log.Println("err write packet", err.Error())
 					conn.Close()
@@ -118,7 +120,9 @@ func (e *Engine) ManageServer(server *Server) {
 					return
 				}
 
-				// TODO Restore subscription
+				if res.Session {
+					// TODO Restore subscription
+				}
 
 				// start manage client
 				go client.Start()
@@ -131,7 +135,7 @@ func (e *Engine) ManageServer(server *Server) {
 	}
 }
 
-func (e *Engine) manageClients() {
+func (e *Engine) clientThread() {
 	for event := range e.channel {
 		log.Println("engine receive message: " + event.String())
 
@@ -143,14 +147,22 @@ func (e *Engine) manageClients() {
 				delete(e.clients, event.ClientId)
 			}
 		case packet.SUBSCRIBE:
-			// todo: do not support wildcard topic names on subscribe yet
-			var retain model.RetainMessage
-			if row, err := e.db.Where(&model.RetainMessage{Topic: event.Topic.Name}).Find(&retain).Rows(); err == nil {
-				for row.Next() {
-					revent := transport.Event{MessageId: retain.MessageId, Topic: transport.EventTopic{Name: retain.Topic, Qos: retain.Qos},
-						Payload: retain.Payload, Qos: retain.Qos, Retain: true}
-					revent.ClientId = event.ClientId
-					e.publishMessage(revent)
+			var retains []model.RetainMessage
+			if rows, err := e.db.Find(&retains).Rows(); err == nil {
+				for rows.Next() {
+					var msg model.RetainMessage
+					e.db.ScanRows(rows, &msg)
+					if packet.MatchTopic(event.Topic.Name, msg.Topic) {
+						retain := transport.Event{
+							ClientId: event.ClientId,
+							MessageId: msg.MessageId,
+							Topic: transport.EventTopic{Name: msg.Topic, Qos: msg.Qos},
+							Payload: msg.Payload,
+							Qos: msg.Qos,
+							Retain: true,
+						}
+						e.publishMessage(retain)
+					}
 				}
 			}
 
@@ -288,20 +300,12 @@ func (e *Engine) publishMessage(event transport.Event) {
 }
 
 func (e *Engine) saveClient(id string, conn net.Conn, session bool) *Client {
-	var cid string = id
-	if id == "" {
-		// generate temporary ident
-		ident := make([]byte, 8)
-		rand.Read(ident)
-		cid = string(cid)
-	}
-
-	if e.clients[cid] != nil {
-		e.clients[cid].conn = conn
+	if e.clients[id] != nil {
+		e.clients[id].conn = conn
 	} else {
-		client := NewClient(cid, conn, session, e.channel)
-		e.clients[cid] = client
+		client := NewClient(id, conn, session, e.channel)
+		e.clients[id] = client
 	}
 
-	return e.clients[cid]
+	return e.clients[id]
 }

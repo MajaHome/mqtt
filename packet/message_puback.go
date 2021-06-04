@@ -1,11 +1,11 @@
 package packet
 
 import (
-	"strconv"
+	"fmt"
 )
 
 type PubAckPacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 }
 
@@ -13,7 +13,7 @@ func NewPubAck() *PubAckPacket {
 	return &PubAckPacket{}
 }
 
-func CreatePubAck(buf []byte) *PubAckPacket {
+func CreatePubAck(buf byte) *PubAckPacket {
 	return &PubAckPacket{
 		Header: buf,
 	}
@@ -49,5 +49,5 @@ func (pack *PubAckPacket) Pack() []byte {
 }
 
 func (pack *PubAckPacket) String() string {
-	return "Message PubAck: {id=" + strconv.Itoa(int(pack.Id)) + "}"
+	return fmt.Sprintf("PubAck: {id: %d}", pack.Id)
 }

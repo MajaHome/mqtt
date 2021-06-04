@@ -1,11 +1,12 @@
 # mqtt server
 
 ## Status
-CONNECT, SUBSCRIBE, PUBLISH (with any qos) and retain messages (persisted!) seems work fine.
-Add mqtt client implementation.
+Server in beta stage. Most function is works fine. But some todo still exists.
 
-TODO: sending *will message* under development
-
+TODO: 
+ * restore subscription if cleanSession == 0
+ * save subscription works fine, but require check new sub/unsub after reconnects
+ * sending *will message*
 
 ## Purpose
 This is my implementation of mqtt server for Maja Suite project. Mqtt server will be central queue for all messages 
@@ -31,9 +32,3 @@ Specification: https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.ht
 Author: Eugene Chertikhin <e.chertikhin@crestwavetech.com>
 
 Licensed under GNU GPL.
-
-## Problems on mqtt 3.1.1 specification (should keep it in mind)
-
-### No errors manage
-I.e. can't send error to publish command in case of wrong topic or illegal payload.
-

@@ -1,6 +1,8 @@
 package packet
 
-import "strconv"
+import (
+	"fmt"
+)
 
 const (
 	ConnectAccepted int = iota
@@ -12,7 +14,7 @@ const (
 )
 
 type ConnAckPacket struct {
-	Header     []byte
+	Header     byte
 	Session    bool
 	ReturnCode uint8
 }
@@ -21,7 +23,7 @@ func NewConnAck() *ConnAckPacket {
 	return &ConnAckPacket{}
 }
 
-func CreateConnAck(buf []byte) *ConnAckPacket {
+func CreateConnAck(buf byte) *ConnAckPacket {
 	return &ConnAckPacket{
 		Header:  buf,
 		Session: false,
@@ -37,9 +39,7 @@ func (cack *ConnAckPacket) Length() int {
 }
 
 func (cack *ConnAckPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	acknowledge, offset, err := ReadInt8(buf, offset)
+	acknowledge, offset, err := ReadInt8(buf, 0)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (cack *ConnAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(CONNACK) << 4
-	buf[1] = byte(cack.Length()) // Size
+	buf[1] = byte(2)		// length
 	if cack.Session {
 		buf[2] = 0x01
 	} else {
@@ -73,6 +73,5 @@ func (cack *ConnAckPacket) Pack() []byte {
 }
 
 func (cack *ConnAckPacket) String() string {
-	return "Message ConnAck: {session: " + strconv.FormatBool(cack.Session) + ", code: " +
-		strconv.Itoa(int(cack.ReturnCode)) + "}"
+	return fmt.Sprintf("ConnAck: {session: %v, code: %v}", cack.Session, cack.ReturnCode)
 }

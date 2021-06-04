@@ -23,13 +23,13 @@ const (
 )
 
 var (
-	ErrInvalidPacketType = errors.New("invalid packet type")
-	ErrProtocolError = errors.New("protocol error (not supported)")
+	ErrInvalidPacketType   = errors.New("invalid packet type")
+	ErrProtocolError       = errors.New("protocol error (not supported)")
 	ErrInvalidPacketLength = errors.New("invalid packet Len")
-	ErrUnknownPacket = errors.New("unknown packet type")
-	ErrReadFromBuf = errors.New("error read data from buffer")
-	ErrUnsupportedVersion = errors.New("unsupported mqtt version")
-	ErrConnect = errors.New("error connect to broker")
+	ErrUnknownPacket       = errors.New("unknown packet type")
+	ErrReadFromBuf         = errors.New("error read data from buffer")
+	ErrUnsupportedVersion  = errors.New("unsupported mqtt version")
+	ErrConnect             = errors.New("error connect to broker")
 )
 
 type Packet interface {
@@ -77,8 +77,8 @@ func (t Type) String() string {
 	return "Unknown"
 }
 
-func Create(buf []byte) Packet {
-	t := Type(buf[0] >> 4)
+func Create(buf byte) Packet {
+	t := Type(buf >> 4)
 
 	switch t {
 	case CONNECT:

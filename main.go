@@ -2,11 +2,11 @@ package main
 
 import (
 	"flag"
+	"github.com/MajaSuite/mqtt/broker"
 	"log"
 	"os"
-	"syscall"
 	"os/signal"
-	"github.com/MajaSuite/mqtt/broker"
+	"syscall"
 )
 
 var (

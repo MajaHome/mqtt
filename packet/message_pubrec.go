@@ -1,9 +1,11 @@
 package packet
 
-import "strconv"
+import (
+	"fmt"
+)
 
 type PubRecPacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 }
 
@@ -11,7 +13,7 @@ func NewPubRec() *PubRecPacket {
 	return &PubRecPacket{}
 }
 
-func CreatePubRec(buf []byte) *PubRecPacket {
+func CreatePubRec(buf byte) *PubRecPacket {
 	return &PubRecPacket{
 		Header: buf,
 	}
@@ -47,5 +49,5 @@ func (p *PubRecPacket) Pack() []byte {
 }
 
 func (p *PubRecPacket) String() string {
-	return "Message PubRec: {id=" + strconv.Itoa(int(p.Id)) + " }"
+	return fmt.Sprintf("PubRec: {id: %d}", p.Id)
 }

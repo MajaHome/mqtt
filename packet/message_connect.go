@@ -1,13 +1,12 @@
 package packet
 
 import (
+	"fmt"
 	"log"
-	"strconv"
-	"strings"
 )
 
 type ConnPacket struct {
-	Header       []byte
+	Header       byte
 	ClientID     string
 	KeepAlive    uint16
 	Username     string
@@ -15,13 +14,14 @@ type ConnPacket struct {
 	CleanSession bool
 	Will         *Message
 	Version      byte
+	VersionName  string
 }
 
 func NewConnect() *ConnPacket {
 	return &ConnPacket{}
 }
 
-func CreateConnect(buf []byte) *ConnPacket {
+func CreateConnect(buf byte) *ConnPacket {
 	return &ConnPacket{
 		Header: buf,
 	}
@@ -32,25 +32,32 @@ func (c *ConnPacket) Type() Type {
 }
 
 func (c *ConnPacket) Length() int {
-	var l int = 2 /*hdr len*/ + len("MQTT") /*hdr name*/ + 1 /*version*/ + 1 /*flag*/
+	var l int = 2 /*version len*/ +
+		len(c.VersionName) /*version name*/ +
+		1 /*version code*/ +
+		1 /*flag*/ +
+		2 /*keepalive*/ +
+		2 /*cliendid len*/ +
+		len(c.ClientID) +
+		2 /*username len*/ +
+		len(c.Username) +
+		2 /*pass len*/ +
+		len(c.Password)
+
 	if c.Will != nil {
-		l += c.Will.Length()
+		return c.Will.Length() + l
 	}
-	l += 2 /*keepalive*/ + 2 /*cliendidlen*/ + len(c.ClientID) +
-		2 /*len*/ + len(c.Username) + 2 /*len*/ + len(c.Password)
 
 	return l
 }
 
 func (c *ConnPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	hdrLen, offset, err := ReadInt16(buf, offset)
+	versionLen, offset, err := ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
 
-	hdr, offset, err := ReadString(buf, offset, int(hdrLen))
+	c.VersionName, offset, err = ReadString(buf, offset, int(versionLen))
 	if err != nil {
 		return err
 	}
@@ -62,7 +69,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 	if c.Version != byte(4) {
 		return ErrUnsupportedVersion
 	}
-	if c.Version == 4 && hdr != "MQTT" {
+	if c.Version == 4 && c.VersionName != "MQTT" {
 		return ErrProtocolError
 	}
 
@@ -163,18 +170,16 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 }
 
 func (c *ConnPacket) Pack() []byte {
-	offset := 0
-	buf := make([]byte, c.Length()+2)
+	lenBuff := WriteLength(c.Length())
+	buf := make([]byte, 1 + len(lenBuff) + c.Length())
 
-	offset = WriteInt8(buf, offset, byte(CONNECT)<<4)
-	offset = WriteInt8(buf, offset, byte(c.Length()))
-	offset = WriteInt16(buf, offset, uint16(len("MQTT")))
+	offset := WriteInt8(buf, 0, byte(CONNECT)<<4)
+	offset = WriteBytes(buf, offset, lenBuff)
 
-	copy(buf[offset:], []byte("MQTT"))
-	offset += 4
+	offset = WriteString(buf, offset, c.VersionName)
 	offset = WriteInt8(buf, offset, c.Version)
 
-	var flag uint8 = 0x0
+	var flag uint8
 	if len(c.Username) > 0 {
 		flag |= 128 // 1000 0000
 	}
@@ -196,50 +201,27 @@ func (c *ConnPacket) Pack() []byte {
 	if c.CleanSession {
 		flag |= 0x2 // 00000010
 	}
+
 	offset = WriteInt8(buf, offset, flag)
-
 	offset = WriteInt16(buf, offset, c.KeepAlive)
-
-	if c.Will != nil {
-		offset = WriteInt16(buf, offset, uint16(len(c.Will.Topic)))
-		copy(buf[offset:], c.Will.Topic)
-
-		offset = WriteInt16(buf, offset, uint16(len(c.Will.Payload)))
-		copy(buf[offset:], c.Will.Payload)
-	}
-
-	offset = WriteInt16(buf, offset, uint16(len(c.ClientID)))
-	copy(buf[offset:], c.ClientID)
-	offset += len(c.ClientID)
+	offset = WriteString(buf, offset, c.ClientID)
 
 	if c.Will != nil {
 		copy(buf[offset:], c.Will.Pack())
 		offset += c.Will.Length()
 	}
 
-	offset = WriteInt16(buf, offset, uint16(len(c.Username)))
-	copy(buf[offset:], c.Username)
-	offset += len(c.Username)
-
-	offset = WriteInt16(buf, offset, uint16(len(c.Password)))
-	copy(buf[offset:], c.Password)
+	offset = WriteString(buf, offset, c.Username)
+	offset = WriteString(buf, offset, c.Password)
 
 	return buf
 }
 
 func (c *ConnPacket) String() string {
-	var sb strings.Builder
-
-	sb.WriteString("Message Connect: {")
-	sb.WriteString("ver=" + strconv.Itoa(int(c.Version)) + ", ")
-	sb.WriteString("keepalive=" + strconv.Itoa(int(c.KeepAlive)) + ", ")
-	sb.WriteString("clientId=" + c.ClientID + ", ")
+	var will string
 	if c.Will != nil {
-		sb.WriteString("will=" + c.Will.String() + ", ")
+		will = ", will: " + c.Will.String()
 	}
-	sb.WriteString("login=" + c.Username + ", ")
-	sb.WriteString("password=" + c.Password)
-	sb.WriteString("}")
-
-	return sb.String()
+	return fmt.Sprintf("connect: {var: %d, keepalive: %d, clientid: %s%s, login: %s, pass: %s}", c.Version,
+		c.KeepAlive, c.ClientID, will, c.Username, c.Password)
 }

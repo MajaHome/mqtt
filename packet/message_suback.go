@@ -2,11 +2,11 @@ package packet
 
 import (
 	"encoding/binary"
-	"strings"
+	"fmt"
 )
 
 type SubAckPacket struct {
-	Header      []byte
+	Header      byte
 	Id          uint16
 	ReturnCodes []QoS
 }
@@ -15,9 +15,10 @@ func NewSubAck() *SubAckPacket {
 	return &SubAckPacket{}
 }
 
-func CreateSubAck(buf []byte) *SubAckPacket {
+func CreateSubAck(buf byte) *SubAckPacket {
 	return &SubAckPacket{
 		Header: buf,
+		ReturnCodes: []QoS{},
 	}
 }
 
@@ -30,20 +31,16 @@ func (sack *SubAckPacket) Length() int {
 }
 
 func (sack *SubAckPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	id, offset, err := ReadInt16(buf, offset)
+	id, offset, err := ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
 	sack.Id = id
 
-	var read uint8 = 2
-	for sack.Header[1] > read {
+	for left := len(buf)-2; left > 0; left-- {
 		var qos byte
 		qos, offset, err = ReadInt8(buf, offset)
 		sack.ReturnCodes = append(sack.ReturnCodes, QoS(qos))
-		read++
 	}
 
 	return nil
@@ -64,14 +61,10 @@ func (sack *SubAckPacket) Pack() []byte {
 }
 
 func (sack *SubAckPacket) String() string {
-	var sb strings.Builder
-
-	sb.WriteString("Message SubAck: [")
+	var codes string
 	for _, rc := range sack.ReturnCodes {
-		sb.WriteString("returnCode: ")
-		sb.WriteString(rc.String() + ",")
+		codes += rc.String()+", "
 	}
-	sb.WriteString("]")
 
-	return sb.String()
+	return fmt.Sprintf("SubAck: {id: %d, codes: [%s]}", sack.Id, codes)
 }

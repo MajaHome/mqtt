@@ -1,11 +1,11 @@
 package broker
 
 import (
+	"fmt"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 )
 
@@ -14,10 +14,10 @@ type Client struct {
 	engineChan   chan transport.Event
 	clientChan   chan transport.Event
 	clientId     string
-	session      bool                   // clean or persisten session
+	session      bool                   // clean or persisted session
 	subscription []transport.EventTopic // subscribed topics
 	will         *packet.Message
-	stop         bool // flag to stop
+	stop         bool                   // flag to stop
 }
 
 func NewClient(id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
@@ -37,11 +37,10 @@ func (c *Client) Start() {
 	c.stop = false
 	for {
 		if c.stop {
-			log.Printf("client %s disconnected\n" + c.clientId)
+			log.Printf("client %s disconnected\n", c.clientId)
 			return
 		}
 
-		// read from channel and/or from network
 		go func() {
 			for e := range c.clientChan {
 				log.Println("client receive message: " + e.String())
@@ -69,7 +68,7 @@ func (c *Client) Start() {
 					log.Println("wrong packet from engine")
 				}
 
-				if err := transport.WritePacket(c.conn, res); err != nil {
+				if err := packet.WritePacket(c.conn, res); err != nil {
 					c.engineChan <- transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
 					log.Println("client disconnect while write to socket")
 					c.Stop()
@@ -78,7 +77,7 @@ func (c *Client) Start() {
 			}
 		}()
 
-		if pkt, err = transport.ReadPacket(c.conn); err != nil {
+		if pkt, err = packet.ReadPacket(c.conn); err != nil {
 			log.Println("err read packet, disconnected: ", err.Error())
 			c.Stop()
 
@@ -91,10 +90,10 @@ func (c *Client) Start() {
 		switch pkt.Type() {
 		case packet.DISCONNECT:
 			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
-			err = transport.WritePacket(c.conn, packet.NewDisconnect())
+			err = packet.WritePacket(c.conn, packet.NewDisconnect())
 			c.Stop()
 		case packet.PING:
-			err = transport.WritePacket(c.conn, packet.NewPong())
+			err = packet.WritePacket(c.conn, packet.NewPong())
 		case packet.SUBSCRIBE:
 			req := pkt.(*packet.SubscribePacket)
 
@@ -102,13 +101,13 @@ func (c *Client) Start() {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				qos = append(qos, c.addSubscription(t))
-				c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
+				c.engineChan <- transport.Event{MessageId: req.Id, ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
 			}
 
 			res := packet.NewSubAck()
 			res.Id = req.Id
 			res.ReturnCodes = qos
-			err = transport.WritePacket(c.conn, res)
+			err = packet.WritePacket(c.conn, res)
 		case packet.UNSUBSCRIBE:
 			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
@@ -117,7 +116,7 @@ func (c *Client) Start() {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				c.removeSubscription(t)
-				err = transport.WritePacket(c.conn, res)
+				err = packet.WritePacket(c.conn, res)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
@@ -205,7 +204,7 @@ func (c *Client) Contains(topic string) bool {
 	}
 
 	for _, subs := range c.subscription {
-		var i int = 0	// start from first level
+		var i int = 0 // start from first level
 		s := strings.Split(subs.Name, "/")
 
 		var found bool
@@ -244,18 +243,16 @@ func (c *Client) Contains(topic string) bool {
 }
 
 func (c *Client) String() string {
-	var sb strings.Builder
-	sb.WriteString("client {")
-	sb.WriteString("clientId: \"" + c.clientId + "\", ")
-	sb.WriteString("session: " + strconv.FormatBool(c.session) + ", ")
+	var will string
 	if c.will != nil {
-		sb.WriteString("will: " + c.will.String() + ", ")
+		will = fmt.Sprintf(", will: %s", c.will.String())
 	}
-	sb.WriteString("subscription: [")
+
+	var subs string
 	for _, v := range c.subscription {
-		sb.WriteString("{ name: \"" + v.Name + "\", qos: " + strconv.Itoa(int(v.Qos)) + "}")
+		subs += v.String() + ", "
 	}
-	sb.WriteString("]")
-	sb.WriteString("}")
-	return sb.String()
+
+	return fmt.Sprintf("client {clientId: %s, session: %v%s, subscription: [%s]}",
+		c.clientId, c.session, will, subs)
 }

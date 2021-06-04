@@ -1,8 +1,7 @@
 package packet
 
 import (
-	"strconv"
-	"strings"
+	"fmt"
 )
 
 type SubscribePayload struct {
@@ -11,27 +10,24 @@ type SubscribePayload struct {
 }
 
 func (p *SubscribePayload) Length() int {
-	return len(p.Topic) + 1 /*qos*/ + 2 /*len*/
+	return 2 /*topic len*/ +
+		len(p.Topic) +
+		1 /*qos*/
 }
 
 func (p *SubscribePayload) Pack() []byte {
-	var offset int = 0
 	buf := make([]byte, p.Length())
-
-	offset = WriteInt16(buf, offset, uint16(len(p.Topic)))
-	copy(buf[offset:], p.Topic)
-	offset += len(p.Topic)
-	offset = WriteInt8(buf, offset, uint8(p.QoS))
-
+	offset := WriteString(buf, 0, p.Topic)
+	WriteInt8(buf, offset, uint8(p.QoS))
 	return buf
 }
 
 func (p *SubscribePayload) String() string {
-	return "{topic:" + p.Topic + ", qos=" + p.QoS.String() + "}"
+	return fmt.Sprintf("{topic: %s, qos: %d}", p.Topic, p.QoS.Int())
 }
 
 type SubscribePacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 	Topics []SubscribePayload
 }
@@ -40,8 +36,11 @@ func NewSubscribe() *SubscribePacket {
 	return &SubscribePacket{}
 }
 
-func CreateSubscribe(buf []byte) *SubscribePacket {
-	return &SubscribePacket{Header: buf}
+func CreateSubscribe(buf byte) *SubscribePacket {
+	return &SubscribePacket{
+		Header: buf,
+		Topics: []SubscribePayload{},
+	}
 }
 
 func (s *SubscribePacket) Type() Type {
@@ -49,23 +48,21 @@ func (s *SubscribePacket) Type() Type {
 }
 
 func (s *SubscribePacket) Length() int {
-	var l int = 0
+	var l int
 	for _, p := range s.Topics {
 		l += p.Length()
 	}
-	return 2/*id*/ + l
+	return 2 /*id*/ + l
 }
 
 func (s *SubscribePacket) Unpack(buf []byte) error {
-	var offset int = 0
-	var err error
-
-	s.Id, offset, err = ReadInt16(buf, offset)
+	id, offset, err := ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
+	s.Id = id
 
-	for s.Header[1] > uint8(offset) {
+	for left := len(buf)-2; left > 0; {
 		var topicLen uint16
 		topicLen, offset, err = ReadInt16(buf, offset)
 		if err != nil {
@@ -82,35 +79,33 @@ func (s *SubscribePacket) Unpack(buf []byte) error {
 		qos, offset, err = ReadInt8(buf, offset)
 
 		s.Topics = append(s.Topics, SubscribePayload{Topic: topic, QoS: QoS(qos)})
+		left -= offset
 	}
 
 	return nil
 }
 
 func (s *SubscribePacket) Pack() []byte {
-	var offset int = 0
-	buf := make([]byte, 4)
-	offset = WriteInt8(buf, offset, byte(SUBSCRIBE)<<4)
-	offset = WriteInt8(buf, offset, byte(s.Length()))
+	lenBuff := WriteLength(s.Length())
+	buf := make([]byte, 1 + len(lenBuff) + s.Length())
+
+	offset := WriteInt8(buf, 0, byte(SUBSCRIBE)<<4)
+	offset = WriteBytes(buf, offset, lenBuff)
 	offset = WriteInt16(buf, offset, s.Id)
 
 	for _, t := range s.Topics {
-		buf = append(buf, t.Pack()...)
+		data := t.Pack()
+		copy(buf[offset:], data)
+		offset += len(data)
 	}
 
 	return buf
 }
 
 func (s *SubscribePacket) String() string {
-	var sb strings.Builder
-
-	sb.WriteString("Message Subscribe: {id:")
-	sb.WriteString(strconv.Itoa(int(s.Id)))
+	var topics string
 	for _, t := range s.Topics {
-		sb.WriteString(", payload: ")
-		sb.WriteString(t.String())
+		topics += t.String() + ", "
 	}
-	sb.WriteString("}")
-
-	return sb.String()
+	return fmt.Sprintf("Subscribe: {id: %d, topics: [%s]}", s.Id, topics)
 }

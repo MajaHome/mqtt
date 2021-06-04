@@ -1,14 +1,14 @@
 package packet
 
 type PongPacket struct {
-	Header []byte
+	Header byte
 }
 
 func NewPong() *PongPacket {
 	return &PongPacket{}
 }
 
-func CreatePong(buf []byte) *PongPacket {
+func CreatePong(buf byte) *PongPacket {
 	return &PongPacket{
 		Header: buf,
 	}
@@ -36,5 +36,5 @@ func (p *PongPacket) Pack() []byte {
 }
 
 func (p *PongPacket) String() string {
-	return "Message Pong: {}"
+	return "Pong: {}"
 }

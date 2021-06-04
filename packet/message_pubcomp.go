@@ -1,9 +1,11 @@
 package packet
 
-import "strconv"
+import (
+	"fmt"
+)
 
 type PubCompPacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 }
 
@@ -11,7 +13,7 @@ func NewPubComp() *PubCompPacket {
 	return &PubCompPacket{}
 }
 
-func CreatePubComp(buf []byte) *PubCompPacket {
+func CreatePubComp(buf byte) *PubCompPacket {
 	return &PubCompPacket{
 		Header: buf,
 	}
@@ -47,5 +49,5 @@ func (p *PubCompPacket) Pack() []byte {
 }
 
 func (p *PubCompPacket) String() string {
-	return "Message PubComp: {id=" + strconv.Itoa(int(p.Id)) + " }"
+	return fmt.Sprintf("PubComp: {id: %d}", p.Id)
 }

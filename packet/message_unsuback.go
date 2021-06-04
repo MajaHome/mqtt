@@ -2,11 +2,11 @@ package packet
 
 import (
 	"encoding/binary"
-	"strconv"
+	"fmt"
 )
 
 type UnSubAckPacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 }
 
@@ -14,7 +14,7 @@ func NewUnSubAck() *UnSubAckPacket {
 	return &UnSubAckPacket{}
 }
 
-func CreateUnSubAck(buf []byte) *UnSubAckPacket {
+func CreateUnSubAck(buf byte) *UnSubAckPacket {
 	return &UnSubAckPacket{
 		Header: buf,
 	}
@@ -29,14 +29,11 @@ func (uack *UnSubAckPacket) Length() int {
 }
 
 func (uack *UnSubAckPacket) Unpack(buf []byte) error {
-	var offset int = 0
-
-	id, offset, err := ReadInt16(buf, offset)
+	id, _, err := ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
 	uack.Id = id
-
 	return nil
 }
 
@@ -51,5 +48,5 @@ func (uack *UnSubAckPacket) Pack() []byte {
 }
 
 func (uack *UnSubAckPacket) String() string {
-	return "Message UnSubAck: {id=" + strconv.Itoa(int(uack.Id)) + "}"
+	return fmt.Sprintf("UnSubAck: {id: %d}", uack.Id)
 }

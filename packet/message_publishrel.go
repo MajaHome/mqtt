@@ -1,9 +1,11 @@
 package packet
 
-import "strconv"
+import (
+	"fmt"
+)
 
 type PubRelPacket struct {
-	Header []byte
+	Header byte
 	Id     uint16
 }
 
@@ -11,7 +13,7 @@ func NewPubRel() *PubRelPacket {
 	return &PubRelPacket{}
 }
 
-func CreatePubRel(buf []byte) *PubRelPacket {
+func CreatePubRel(buf byte) *PubRelPacket {
 	return &PubRelPacket{
 		Header: buf,
 	}
@@ -47,5 +49,5 @@ func (p *PubRelPacket) Pack() []byte {
 }
 
 func (p *PubRelPacket) String() string {
-	return "Message PubRel: {id=" + strconv.Itoa(int(p.Id)) + " }"
+	return fmt.Sprintf("PubRel: {id: %d}", p.Id)
 }

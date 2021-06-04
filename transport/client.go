@@ -1,10 +1,10 @@
 package transport
 
 import (
+	"github.com/MajaSuite/mqtt/packet"
 	"log"
 	"net"
 	"time"
-	"github.com/MajaSuite/mqtt/packet"
 )
 
 type MqttClient struct {
@@ -15,7 +15,7 @@ type MqttClient struct {
 	quit     bool
 }
 
-func Connect(addr string, clientId string, keepAlive uint16, login string, pass string)  (*MqttClient, error) {
+func Connect(addr string, clientId string, keepAlive uint16, login string, pass string) (*MqttClient, error) {
 	// socket connect
 	c, err := net.Dial("tcp4", addr)
 	if err != nil {
@@ -25,15 +25,16 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 	// send connect
 	cp := packet.NewConnect()
 	cp.Version = 4
+	cp.VersionName = "MQTT"
 	cp.ClientID = clientId
 	cp.KeepAlive = keepAlive
 	cp.Username = login
 	cp.Password = pass
-	if err := WritePacket(c, cp); err != nil {
+	if err := packet.WritePacket(c, cp); err != nil {
 		return nil, err
 	}
 
-	resp, err := ReadPacket(c)
+	resp, err := packet.ReadPacket(c)
 	if err != nil {
 		return nil, err
 	}
@@ -92,24 +93,24 @@ func (c *MqttClient) client() {
 				switch pkt.Type() {
 				case packet.DISCONNECT:
 					log.Println("disconnect from broker")
-					WritePacket(c.conn, pkt)
+					packet.WritePacket(c.conn, pkt)
 				case packet.PING:
-					if err := WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.SUBSCRIBE:
-					if err := WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.UNSUBSCRIBE:
-					if err := WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.PUBLISH:
-					if err := WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
@@ -117,7 +118,7 @@ func (c *MqttClient) client() {
 			}
 		}()
 
-		if pkt, err = ReadPacket(c.conn); err != nil {
+		if pkt, err = packet.ReadPacket(c.conn); err != nil {
 			log.Println("err read packet, disconnected: ", err.Error())
 			c.quit = true
 			continue
@@ -127,11 +128,11 @@ func (c *MqttClient) client() {
 		case packet.PUBLISH:
 			c.Broker <- pkt
 		case packet.PUBACK:
-			;
+
 		case packet.PUBREC:
-			;
+
 		case packet.PUBCOMP:
-			;
+
 		case packet.DISCONNECT:
 			c.quit = true
 		}
@@ -139,12 +140,12 @@ func (c *MqttClient) client() {
 }
 
 func (c *MqttClient) pinger(keepAlive time.Duration) {
-	var nextPing = time.Now().Add(time.Second*keepAlive-1)
+	var nextPing = time.Now().Add(time.Second*keepAlive - 1)
 	for {
 		time.Sleep(time.Second)
 
 		if time.Now().After(nextPing) {
-			nextPing = time.Now().Add(time.Second*keepAlive)
+			nextPing = time.Now().Add(time.Second * keepAlive)
 			c.Sendout <- packet.NewPing()
 		}
 
