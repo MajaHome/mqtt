@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+var DEBUG bool = false
+
 func ReadInt8(buf []byte, offset int) (uint8, int, error) {
 	var value uint8
 
@@ -113,10 +115,17 @@ func ReadPacket(conn net.Conn) (Packet, error) {
 	if packetLength != 0 {
 		payload := make([]byte, packetLength)
 		if n, err := conn.Read(payload); n < packetLength || err != nil {
-			return nil, io.ErrUnexpectedEOF
+			log.Printf("read only %d bytes, try to read last one\n", n)
+			last, err := conn.Read(payload[n:])
+			if err != nil {
+				return nil, io.ErrUnexpectedEOF
+			}
+			log.Printf("read last %d bytes, seems fine now\n", last)
 		}
 
-		log.Printf("read packet payload:\n%s", hex.Dump(payload))
+		if DEBUG {
+			log.Printf("read packet payload:\n%s", hex.Dump(payload))
+		}
 
 		pkt.Unpack(payload)
 	}
@@ -129,7 +138,9 @@ func ReadPacket(conn net.Conn) (Packet, error) {
 func WritePacket(conn net.Conn, pkt Packet) error {
 	packed := pkt.Pack()
 
-	log.Printf("write:\n%s", hex.Dump(packed))
+	if DEBUG {
+		log.Printf("write:\n%s", hex.Dump(packed))
+	}
 
 	_, err := conn.Write(packed)
 	if err != nil {
