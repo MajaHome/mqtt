@@ -1,13 +1,15 @@
 package transport
 
 import (
-	"github.com/MajaSuite/mqtt/packet"
 	"log"
 	"net"
 	"time"
+
+	"github.com/MajaSuite/mqtt/packet"
 )
 
 type MqttClient struct {
+	debug    bool
 	conn     net.Conn
 	clientId string
 	Broker   chan packet.Packet // messages from Broker
@@ -15,7 +17,7 @@ type MqttClient struct {
 	quit     bool
 }
 
-func Connect(addr string, clientId string, keepAlive uint16, login string, pass string) (*MqttClient, error) {
+func Connect(addr string, clientId string, keepAlive uint16, login string, pass string, debug bool) (*MqttClient, error) {
 	// socket connect
 	c, err := net.Dial("tcp4", addr)
 	if err != nil {
@@ -30,11 +32,12 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 	cp.KeepAlive = keepAlive
 	cp.Username = login
 	cp.Password = pass
-	if err := packet.WritePacket(c, cp); err != nil {
+
+	if err := packet.WritePacket(c, cp, debug); err != nil {
 		return nil, err
 	}
 
-	resp, err := packet.ReadPacket(c)
+	resp, err := packet.ReadPacket(c, debug)
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +48,7 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 
 	if resp.(*packet.ConnAckPacket).ReturnCode == 0 {
 		mqttClient := &MqttClient{
+			debug:    debug,
 			conn:     c,
 			clientId: cp.ClientID,
 			Broker:   make(chan packet.Packet),
@@ -61,19 +65,34 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 }
 
 func (c *MqttClient) Disconnect() {
-	c.Sendout <- packet.NewDisconnect()
+	if !c.quit {
+		c.Sendout <- packet.NewDisconnect()
+		c.quit = true
+	}
 }
 
 func (c *MqttClient) Subscribe(pkt *packet.SubscribePacket) {
-	c.Sendout <- pkt
+	if !c.quit {
+		c.Sendout <- pkt
+	}
 }
 
 func (c *MqttClient) Unsubscribe(pkt *packet.UnSubscribePacket) {
-	c.Sendout <- pkt
+	if !c.quit {
+		c.Sendout <- pkt
+	}
 }
 
 func (c *MqttClient) Publish(pkt *packet.PublishPacket) {
-	c.Sendout <- pkt
+	if !c.quit {
+		c.Sendout <- pkt
+	}
+}
+
+func (c *MqttClient) Send(pkt packet.Packet) {
+	if !c.quit {
+		c.Sendout <- pkt
+	}
 }
 
 func (c *MqttClient) client() {
@@ -93,24 +112,24 @@ func (c *MqttClient) client() {
 				switch pkt.Type() {
 				case packet.DISCONNECT:
 					log.Println("disconnect from broker")
-					packet.WritePacket(c.conn, pkt)
+					packet.WritePacket(c.conn, pkt, c.debug)
 				case packet.PING:
-					if err := packet.WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.SUBSCRIBE:
-					if err := packet.WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.UNSUBSCRIBE:
-					if err := packet.WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
 				case packet.PUBLISH:
-					if err := packet.WritePacket(c.conn, pkt); err != nil {
+					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
 						log.Println("error send packet to broker, broker drop connection")
 						c.quit = true
 					}
@@ -118,7 +137,7 @@ func (c *MqttClient) client() {
 			}
 		}()
 
-		if pkt, err = packet.ReadPacket(c.conn); err != nil {
+		if pkt, err = packet.ReadPacket(c.conn, c.debug); err != nil {
 			log.Println("err read packet, disconnected: ", err.Error())
 			c.quit = true
 			continue
@@ -146,12 +165,13 @@ func (c *MqttClient) pinger(keepAlive time.Duration) {
 
 		if time.Now().After(nextPing) {
 			nextPing = time.Now().Add(time.Second * keepAlive)
-			c.Sendout <- packet.NewPing()
-		}
 
-		if c.quit {
-			log.Println("pinger quit")
-			return
+			if c.quit {
+				log.Println("pinger quit")
+				return
+			}
+
+			c.Sendout <- packet.NewPing()
 		}
 	}
 }

@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-var DEBUG bool = false
-
 func ReadInt8(buf []byte, offset int) (uint8, int, error) {
 	var value uint8
 
@@ -73,12 +71,12 @@ func ReadString(buf []byte, offset int, length int) (string, int, error) {
 func WriteString(buf []byte, offset int, value string) int {
 	offset = WriteInt16(buf, offset, uint16(len(value)))
 	copy(buf[offset:], value)
-	return offset+len(value)
+	return offset + len(value)
 }
 
-func ReadPacket(conn net.Conn) (Packet, error) {
+func ReadPacket(conn net.Conn, debug bool) (Packet, error) {
 	header := make([]byte, 2)
-	if n, err := conn.Read(header); n<2 || err != nil {
+	if n, err := conn.Read(header); n < 2 || err != nil {
 		return nil, io.ErrUnexpectedEOF
 	}
 
@@ -87,17 +85,17 @@ func ReadPacket(conn net.Conn) (Packet, error) {
 	if packetLength > 127 {
 		add := make([]byte, 1)
 
-		for i := 2;; i++ {
+		for i := 2; ; i++ {
 			// allowed only 4 bytes for len
 			if i > 4 {
 				return nil, ErrInvalidPacketLength
 			}
 
-			if n, err := conn.Read(add); n<1 || err != nil {
+			if n, err := conn.Read(add); n < 1 || err != nil {
 				return nil, io.ErrUnexpectedEOF
 			}
 
-			packetLength += int(add[0])-1
+			packetLength += int(add[0]) - 1
 			if add[0] <= 127 {
 				break
 			}
@@ -123,7 +121,7 @@ func ReadPacket(conn net.Conn) (Packet, error) {
 			log.Printf("read last %d bytes, seems fine now\n", last)
 		}
 
-		if DEBUG {
+		if debug {
 			log.Printf("read packet payload:\n%s", hex.Dump(payload))
 		}
 
@@ -135,10 +133,10 @@ func ReadPacket(conn net.Conn) (Packet, error) {
 	return pkt, nil
 }
 
-func WritePacket(conn net.Conn, pkt Packet) error {
+func WritePacket(conn net.Conn, pkt Packet, debug bool) error {
 	packed := pkt.Pack()
 
-	if DEBUG {
+	if debug {
 		log.Printf("write:\n%s", hex.Dump(packed))
 	}
 
@@ -174,6 +172,10 @@ func MatchTopic(mask string, topic string) bool {
 	maskPart := strings.Split(mask, "/")
 
 	for {
+		if len(maskPart) <= i || len(t) <= i {
+			break
+		}
+
 		if maskPart[i] == "#" {
 			found = true
 			break

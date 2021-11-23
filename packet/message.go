@@ -14,21 +14,14 @@ type Message struct {
 }
 
 func (m *Message) Length() int {
-	return len(m.Topic) + 2/*topicLen*/ + len(m.Payload) + 2/*payload len*/
+	return len(m.Topic) + 2 /*topicLen*/ + len(m.Payload) + 2 /*payload len*/
 }
 
 func (m *Message) Pack() []byte {
 	buf := make([]byte, m.Length())
 
 	offset := WriteString(buf, 0, m.Topic)
-	//offset = WriteInt16(buf, offset, uint16(len(m.Topic)))
-	//copy(buf[offset:], m.Topic)
-	//offset += len(m.Topic)
-
 	offset = WriteString(buf, offset, m.Payload)
-	//offset = WriteInt16(buf, offset, uint16(len(m.Payload)))
-	//copy(buf[offset:], m.Payload)
-	//offset += len(m.Payload)
 
 	return buf
 }

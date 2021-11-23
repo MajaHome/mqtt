@@ -2,11 +2,12 @@ package broker
 
 import (
 	"fmt"
-	"github.com/MajaSuite/mqtt/packet"
-	"github.com/MajaSuite/mqtt/transport"
 	"log"
 	"net"
 	"strings"
+
+	"github.com/MajaSuite/mqtt/packet"
+	"github.com/MajaSuite/mqtt/transport"
 )
 
 type Client struct {
@@ -17,7 +18,7 @@ type Client struct {
 	session      bool                   // clean or persisted session
 	subscription []transport.EventTopic // subscribed topics
 	will         *packet.Message
-	stop         bool                   // flag to stop
+	stop         bool // flag to stop
 }
 
 func NewClient(id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
@@ -68,7 +69,7 @@ func (c *Client) Start() {
 					log.Println("wrong packet from engine")
 				}
 
-				if err := packet.WritePacket(c.conn, res); err != nil {
+				if err := packet.WritePacket(c.conn, res, debug); err != nil {
 					c.engineChan <- transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
 					log.Println("client disconnect while write to socket")
 					c.Stop()
@@ -77,7 +78,7 @@ func (c *Client) Start() {
 			}
 		}()
 
-		if pkt, err = packet.ReadPacket(c.conn); err != nil {
+		if pkt, err = packet.ReadPacket(c.conn, debug); err != nil {
 			log.Println("err read packet, disconnected: ", err.Error())
 			c.Stop()
 
@@ -90,10 +91,10 @@ func (c *Client) Start() {
 		switch pkt.Type() {
 		case packet.DISCONNECT:
 			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
-			err = packet.WritePacket(c.conn, packet.NewDisconnect())
+			err = packet.WritePacket(c.conn, packet.NewDisconnect(), debug)
 			c.Stop()
 		case packet.PING:
-			err = packet.WritePacket(c.conn, packet.NewPong())
+			err = packet.WritePacket(c.conn, packet.NewPong(), debug)
 		case packet.SUBSCRIBE:
 			req := pkt.(*packet.SubscribePacket)
 
@@ -107,7 +108,7 @@ func (c *Client) Start() {
 			res := packet.NewSubAck()
 			res.Id = req.Id
 			res.ReturnCodes = qos
-			err = packet.WritePacket(c.conn, res)
+			err = packet.WritePacket(c.conn, res, debug)
 		case packet.UNSUBSCRIBE:
 			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
@@ -116,7 +117,7 @@ func (c *Client) Start() {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				c.removeSubscription(t)
-				err = packet.WritePacket(c.conn, res)
+				err = packet.WritePacket(c.conn, res, debug)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
@@ -209,6 +210,10 @@ func (c *Client) Contains(topic string) bool {
 
 		var found bool
 		for {
+			if len(s) <= i || len(t) <= i {
+				break
+			}
+
 			// subscribed to any topic
 			if s[i] == "#" {
 				found = true

@@ -2,12 +2,12 @@ package main
 
 import (
 	"flag"
-	"github.com/MajaSuite/mqtt/broker"
-	"github.com/MajaSuite/mqtt/packet"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/MajaSuite/mqtt/broker"
 )
 
 var (
@@ -22,7 +22,6 @@ func main() {
 
 	if *debug {
 		log.Println("DEBUG mode ON")
-		packet.DEBUG = true
 	}
 
 	mqtt, err := broker.RunMqtt()
@@ -30,7 +29,7 @@ func main() {
 		log.Panic("error running mqtt broker", err)
 	}
 
-	engine := broker.NewEngine()
+	engine := broker.NewEngine(*debug)
 	engine.ManageServer(mqtt)
 
 	finish := make(chan os.Signal, 1)

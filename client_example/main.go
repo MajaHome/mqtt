@@ -1,14 +1,16 @@
 package main
 
 import (
+	"log"
+	"strconv"
+	"time"
+
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
-	"log"
-	"time"
 )
 
 func main() {
-	client, err := transport.Connect("127.0.0.1:1883", "go-mqttclient", 30, "", "")
+	client, err := transport.Connect("127.0.0.1:1883", "go-mqttclient", 30, "", "", false)
 	if err != nil {
 		panic(err)
 	}
@@ -28,27 +30,33 @@ func main() {
 	}
 	client.Unsubscribe(u)
 
+	go func() {
+		for {
+			for pkt := range client.Broker {
+				if pkt.Type() == packet.PUBLISH {
+					log.Println("NEW PUBLISH: ", pkt)
+				}
+			}
+		}
+	}()
+
 	p := packet.NewPublish()
 	p.Id = uint16(783)
 	p.Topic = "home/topic"
 	p.QoS = 1
 	p.Payload = "{\"name\":\"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow\",\"model\":\"yeelink.light.mono5\", \"token\":\"cfcb32279b1a033a72aa69601ff15f01\",\"mac\":\"5C:E5:0C:CC:6B:27\"}, qos: 1, retain: false, dup:false}"
-	client.Sendout <- p
+	client.Send(p)
 
-	//for i := 0; i < 50; i++ {
-	//	p := packet.NewPublish()
-	//	p.Id = uint16(i)
-	//	p.Topic = "home/topic"
-	//	p.Payload = "{\"message\":\"" + strconv.Itoa(i) + "\"}"
-	//	p.QoS = 1
-	//	client.Sendout <- p
-	//}
-
-	for pkt := range client.Broker {
-		if pkt.Type() == packet.PUBLISH {
-			log.Println("NEW PUBLISH: ", pkt)
-		}
+	for i := 0; i < 500000; i++ {
+		p := packet.NewPublish()
+		p.Id = uint16(i)
+		p.Topic = "home/topic"
+		p.Payload = "{\"message\":\"" + strconv.Itoa(i) + "\"}"
+		p.QoS = 2
+		client.Sendout <- p
 	}
+
+	time.Sleep(time.Second * 20)
 
 	client.Disconnect()
 	time.Sleep(time.Second * 2)

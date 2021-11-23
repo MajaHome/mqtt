@@ -1,14 +1,17 @@
 package broker
 
 import (
+	"log"
+	"net"
+
 	"github.com/MajaSuite/mqtt/model"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"log"
-	"net"
 )
+
+var debug bool
 
 type Engine struct {
 	db       *gorm.DB
@@ -19,7 +22,7 @@ type Engine struct {
 	retain   map[string]transport.Event
 }
 
-func NewEngine() *Engine {
+func NewEngine(_debug bool) *Engine {
 	log.Println("initialize database")
 	conn, err := gorm.Open(sqlite.Open("mqtt.db"), &gorm.Config{})
 	if err != nil {
@@ -31,6 +34,8 @@ func NewEngine() *Engine {
 	conn.AutoMigrate(&model.Subscription{})
 	conn.AutoMigrate(&model.RetainMessage{})
 
+	debug = _debug
+
 	e := &Engine{
 		db:       conn,
 		clients:  make(map[string]*Client),
@@ -40,11 +45,12 @@ func NewEngine() *Engine {
 		retain:   make(map[string]transport.Event),
 	}
 
-	go e.clientThread()
 	return e
 }
 
 func (e *Engine) ManageServer(server *Server) {
+	go e.clientThread()
+
 	for {
 		conn, err := server.Accept()
 		if err != nil {
@@ -53,85 +59,86 @@ func (e *Engine) ManageServer(server *Server) {
 			continue
 		}
 
-		// process with CONNECT
-		go func() {
-			pkt, err := packet.ReadPacket(conn)
-			if err != nil {
-				log.Println("err read packet", err.Error())
-				conn.Close()
-				return
-			}
+		go e.processConnect(conn)
+	}
+}
 
-			if pkt.Type() == packet.CONNECT {
-				res := packet.NewConnAck()
+func (e *Engine) processConnect(conn net.Conn) {
+	pkt, err := packet.ReadPacket(conn, debug)
+	if err != nil {
+		log.Println("err read packet", err.Error())
+		conn.Close()
+		return
+	}
 
-				connPacket := pkt.(*packet.ConnPacket)
-				var id string = connPacket.ClientID
+	if pkt.Type() == packet.CONNECT {
+		res := packet.NewConnAck()
 
-				// check version, now only 4 (3.11)
-				if connPacket.Version != 4 {
-					res.ReturnCode = uint8(packet.ConnectUnacceptableProtocol)
-					return
-				}
+		connPacket := pkt.(*packet.ConnPacket)
+		var id string = connPacket.ClientID
 
-				if len(id) == 0 && !connPacket.CleanSession {
-					res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
-					return
-				}
+		// check version, now only 4 (3.11)
+		if connPacket.Version != 4 {
+			res.ReturnCode = uint8(packet.ConnectUnacceptableProtocol)
+			return
+		}
 
-				res.ReturnCode = uint8(packet.ConnectAccepted)
+		if len(id) == 0 && !connPacket.CleanSession {
+			res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
+			return
+		}
 
-				// check authorization
-				if len(connPacket.Username) > 0 {
-					var user model.User
-					result := e.db.Take(&user, "user_name = ? and password = ?", connPacket.Username,
-						connPacket.Password)
+		res.ReturnCode = uint8(packet.ConnectAccepted)
 
-					if result.Error != nil {
-						log.Println("username/password is wrong")
-						res.ReturnCode = uint8(packet.ConnectBadUserPass)
-					} else {
-						if id == "" {
-							id = connPacket.Username
-						}
-					}
-				}
+		// check authorization
+		if len(connPacket.Username) > 0 {
+			var user model.User
+			result := e.db.Take(&user, "user_name = ? and password = ?", connPacket.Username,
+				connPacket.Password)
 
-				var client *Client
-				if res.ReturnCode == uint8(packet.ConnectAccepted) {
-					res.Session = !connPacket.CleanSession
-					client = e.saveClient(id, conn, res.Session)
-					if connPacket.Will != nil && res.Session {
-						client.will = connPacket.Will
-					}
-				}
-
-				err = packet.WritePacket(conn, res)
-				if err != nil {
-					log.Println("err write packet", err.Error())
-					conn.Close()
-					return
-				}
-
-				// close connection if not authorized
-				if res.ReturnCode != uint8(packet.ConnectAccepted) {
-					log.Println("err connection declined")
-					conn.Close()
-					return
-				}
-
-				if res.Session {
-					// TODO Restore subscription
-				}
-
-				// start manage client
-				go client.Start()
+			if result.Error != nil {
+				log.Println("username/password is wrong")
+				res.ReturnCode = uint8(packet.ConnectBadUserPass)
 			} else {
-				log.Println("wrong packet. expect CONNECT")
-				conn.Close()
-				return
+				if id == "" {
+					id = connPacket.Username
+				}
 			}
-		}()
+		}
+
+		var client *Client
+		if res.ReturnCode == uint8(packet.ConnectAccepted) {
+			res.Session = !connPacket.CleanSession
+			client = e.saveClient(id, conn, res.Session)
+			if connPacket.Will != nil && res.Session {
+				client.will = connPacket.Will
+			}
+		}
+
+		err = packet.WritePacket(conn, res, debug)
+		if err != nil {
+			log.Println("err write packet", err.Error())
+			conn.Close()
+			return
+		}
+
+		// close connection if not authorized
+		if res.ReturnCode != uint8(packet.ConnectAccepted) {
+			log.Println("err connection declined")
+			conn.Close()
+			return
+		}
+
+		if res.Session {
+			// TODO Restore subscription
+		}
+
+		// start manage client
+		go client.Start()
+	} else {
+		log.Println("wrong packet. expect CONNECT")
+		conn.Close()
+		return
 	}
 }
 
@@ -155,11 +162,10 @@ func (e *Engine) clientThread() {
 					if packet.MatchTopic(event.Topic.Name, msg.Topic) {
 						retain := transport.Event{
 							ClientId: event.ClientId,
-							MessageId: msg.MessageId,
-							Topic: transport.EventTopic{Name: msg.Topic, Qos: msg.Qos},
-							Payload: msg.Payload,
-							Qos: msg.Qos,
-							Retain: true,
+							Topic:    transport.EventTopic{Name: msg.Topic, Qos: msg.Qos},
+							Payload:  msg.Payload,
+							Qos:      msg.Qos,
+							Retain:   true,
 						}
 						e.publishMessage(retain)
 					}
@@ -182,8 +188,7 @@ func (e *Engine) clientThread() {
 			if event.Retain {
 				if event.Payload != "" {
 					// save retain message
-					retain := model.RetainMessage{MessageId: event.MessageId, Topic: event.Topic.Name,
-						Payload: event.Payload, Qos: event.Topic.Qos}
+					retain := model.RetainMessage{Topic: event.Topic.Name, Payload: event.Payload, Qos: event.Qos}
 					e.db.Create(&retain)
 				} else {
 					// remove retain message
