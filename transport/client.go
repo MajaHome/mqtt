@@ -8,13 +8,25 @@ import (
 	"github.com/MajaSuite/mqtt/packet"
 )
 
+type Stage byte
+
+const (
+	CONNECTED Stage = iota
+	DISCONNECTED
+	RECONNECT
+)
+
 type MqttClient struct {
-	debug    bool
-	conn     net.Conn
-	clientId string
-	Broker   chan packet.Packet // messages from Broker
-	Sendout  chan packet.Packet // messages to Broker
-	quit     bool
+	debug      bool
+	conn       net.Conn
+	clientId   string
+	keepalive  uint16
+	address    string
+	login      string
+	password   string
+	Broker     chan packet.Packet // messages from Broker
+	Sendout    chan packet.Packet // messages to Broker
+	stage      Stage
 }
 
 func Connect(addr string, clientId string, keepAlive uint16, login string, pass string, debug bool) (*MqttClient, error) {
@@ -50,13 +62,17 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 		mqttClient := &MqttClient{
 			debug:    debug,
 			conn:     c,
-			clientId: cp.ClientID,
+			address: addr,
+			clientId: clientId,
+			keepalive: keepAlive,
+			login: login,
+			password: pass,
 			Broker:   make(chan packet.Packet),
 			Sendout:  make(chan packet.Packet),
+			stage: CONNECTED,
 		}
 
 		go mqttClient.pinger(time.Duration(keepAlive))
-		go mqttClient.client()
 
 		return mqttClient, nil
 	}
@@ -64,114 +80,152 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 	return nil, packet.ErrConnect
 }
 
-func (c *MqttClient) Disconnect() {
-	if !c.quit {
-		c.Sendout <- packet.NewDisconnect()
-		c.quit = true
-	}
-}
-
-func (c *MqttClient) Subscribe(pkt *packet.SubscribePacket) {
-	if !c.quit {
-		c.Sendout <- pkt
-	}
-}
-
-func (c *MqttClient) Unsubscribe(pkt *packet.UnSubscribePacket) {
-	if !c.quit {
-		c.Sendout <- pkt
-	}
-}
-
-func (c *MqttClient) Publish(pkt *packet.PublishPacket) {
-	if !c.quit {
-		c.Sendout <- pkt
-	}
-}
-
-func (c *MqttClient) Send(pkt packet.Packet) {
-	if !c.quit {
-		c.Sendout <- pkt
-	}
-}
-
-func (c *MqttClient) client() {
-	var pkt packet.Packet
-	var err error
-
-	for {
-		if c.quit {
-			log.Println("client quit")
-			close(c.Broker)
-			close(c.Sendout)
-			return
-		}
-
-		go func() {
-			for pkt := range c.Sendout {
-				switch pkt.Type() {
-				case packet.DISCONNECT:
-					log.Println("disconnect from broker")
-					packet.WritePacket(c.conn, pkt, c.debug)
-				case packet.PING:
-					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
-						log.Println("error send packet to broker, broker drop connection")
-						c.quit = true
-					}
-				case packet.SUBSCRIBE:
-					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
-						log.Println("error send packet to broker, broker drop connection")
-						c.quit = true
-					}
-				case packet.UNSUBSCRIBE:
-					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
-						log.Println("error send packet to broker, broker drop connection")
-						c.quit = true
-					}
-				case packet.PUBLISH:
-					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
-						log.Println("error send packet to broker, broker drop connection")
-						c.quit = true
-					}
-				}
-			}
-		}()
-
-		if pkt, err = packet.ReadPacket(c.conn, c.debug); err != nil {
-			log.Println("err read packet, disconnected: ", err.Error())
-			c.quit = true
-			continue
-		}
-
-		switch pkt.Type() {
-		case packet.PUBLISH:
-			c.Broker <- pkt
-		case packet.PUBACK:
-
-		case packet.PUBREC:
-
-		case packet.PUBCOMP:
-
-		case packet.DISCONNECT:
-			c.quit = true
-		}
-	}
-}
-
 func (c *MqttClient) pinger(keepAlive time.Duration) {
 	var nextPing = time.Now().Add(time.Second*keepAlive - 1)
 	for {
+		if c.stage == DISCONNECTED {
+			log.Println("stop mqtt pinger")
+			return
+		}
 		time.Sleep(time.Second)
 
 		if time.Now().After(nextPing) {
 			nextPing = time.Now().Add(time.Second * keepAlive)
+			c.Sendout <- packet.NewPing()
+		}
+	}
+}
 
-			if c.quit {
-				log.Println("pinger quit")
+func (c *MqttClient) reconnect() error {
+	if c.stage == DISCONNECTED {
+		return packet.ErrConnect
+	}
+	log.Println("try reconnect to mqtt server")
+
+	if c.stage == RECONNECT {
+		for c.stage == RECONNECT {
+			time.Sleep(time.Second/10)
+		}
+		if c.stage == DISCONNECTED {
+			return packet.ErrConnect
+		}
+		return nil
+	}
+
+	c.stage = RECONNECT
+	c.conn.Close()
+	cp := packet.NewConnect()
+	cp.Version = 4
+	cp.VersionName = "MQTT"
+	cp.ClientID = c.clientId
+	cp.KeepAlive = c.keepalive
+	cp.Username = c.login
+	cp.Password = c.password
+
+	for {
+		if conn, err := net.Dial("tcp4", c.address); err != nil {
+			continue
+		} else {
+			c.conn = conn
+		}
+
+		if err := packet.WritePacket(c.conn, cp, c.debug); err != nil {
+			c.conn.Close()
+			continue
+		}
+
+		resp, err := packet.ReadPacket(c.conn, c.debug)
+		if err != nil {
+			c.conn.Close()
+			continue
+		}
+
+		if resp == nil || resp.Type() != packet.CONNACK {
+			c.stage = DISCONNECTED
+			return packet.ErrConnect
+		}
+		if resp.(*packet.ConnAckPacket).ReturnCode != 0 {
+			c.stage = DISCONNECTED
+			return packet.ErrConnect
+		} else {
+			break
+		}
+	}
+
+	c.stage = CONNECTED
+
+	return nil
+}
+
+func (c *MqttClient) Start() {
+	// send message to server
+	go func() {
+		for pkt := range c.Sendout {
+			if c.stage == DISCONNECTED {
 				return
 			}
+			if pkt.Type() == packet.DISCONNECT {
+				log.Println("disconnect from broker")
+				packet.WritePacket(c.conn, pkt, c.debug)
+				c.stage = DISCONNECTED
+				c.conn.Close()
+				return
+			} else {
+				log.Println("send to server ", pkt.String())
+				if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
+					if c.reconnect() == packet.ErrConnect {
+						return
+					}
+					packet.WritePacket(c.conn, pkt, c.debug)
+				}
+			}
+		}
+	}()
 
-			c.Sendout <- packet.NewPing()
+	for {
+		if c.stage == DISCONNECTED {
+			log.Println("stop mqtt client")
+			close(c.Broker)
+			close(c.Sendout)
+			c.conn.Close()
+			return
+		}
+
+		pkt, err := packet.ReadPacket(c.conn, c.debug)
+		if err != nil {
+			if c.reconnect() == packet.ErrConnect {
+				return
+			}
+			pkt, err = packet.ReadPacket(c.conn, c.debug)
+		}
+
+		// manage received packet
+		switch pkt.Type() {
+		case packet.PUBLISH:
+			c.Broker <- pkt
+			switch pkt.(*packet.PublishPacket).QoS {
+			case packet.AtLeastOnce: // PUBLISH -> PUBACK
+				p := packet.NewPubAck()
+				p.Id = pkt.(*packet.PublishPacket).Id
+				c.Sendout <- p
+			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
+				p := packet.NewPubRec()
+				p.Id = pkt.(*packet.PublishPacket).Id
+				c.Sendout <- p
+			}
+		case packet.PUBACK:
+			// answer on our publish (to ensure our PUBLISH was successfull)
+		case packet.PUBREC:
+			// answer on PUBLISH with qos2 (to ensure first step of PUBLISH was successfull)
+		case packet.PUBREL:
+			// answer on PUBREC
+			p := packet.NewPubComp()
+			p.Id = pkt.(*packet.PubRelPacket).Id
+			c.Sendout <- p
+		case packet.PUBCOMP:
+			// answer on PUBREL (to ensure second step of PUBLISH was successfull)
+		case packet.DISCONNECT:
+			c.stage = DISCONNECTED
 		}
 	}
 }

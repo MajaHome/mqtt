@@ -15,39 +15,41 @@ func main() {
 		panic(err)
 	}
 
+	go func() {
+		for {
+			for pkt := range client.Broker {
+				log.Println("NEW PACKET FROM SERVER: ", pkt)
+			}
+		}
+	}()
+
+	go client.Start()
+
 	s := packet.NewSubscribe()
 	s.Id = 123
 	s.Topics = []packet.SubscribePayload{
 		{Topic: "home/topic", QoS: 0},
 		{Topic: "home/another", QoS: 1},
 	}
-	client.Subscribe(s)
+	client.Sendout <- s
+
+	time.Sleep(time.Second * 2)
 
 	u := packet.NewUnSub()
 	u.Id = 321
 	u.Topics = []packet.SubscribePayload{
 		{Topic: "home/another", QoS: 0},
 	}
-	client.Unsubscribe(u)
-
-	go func() {
-		for {
-			for pkt := range client.Broker {
-				if pkt.Type() == packet.PUBLISH {
-					log.Println("NEW PUBLISH: ", pkt)
-				}
-			}
-		}
-	}()
+	client.Sendout <- u
 
 	p := packet.NewPublish()
 	p.Id = uint16(783)
 	p.Topic = "home/topic"
 	p.QoS = 1
 	p.Payload = "{\"name\":\"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow\",\"model\":\"yeelink.light.mono5\", \"token\":\"cfcb32279b1a033a72aa69601ff15f01\",\"mac\":\"5C:E5:0C:CC:6B:27\"}, qos: 1, retain: false, dup:false}"
-	client.Send(p)
+	client.Sendout <- p
 
-	for i := 0; i < 500000; i++ {
+	for i := 0; i < 5; i++ {
 		p := packet.NewPublish()
 		p.Id = uint16(i)
 		p.Topic = "home/topic"
@@ -55,9 +57,8 @@ func main() {
 		p.QoS = 2
 		client.Sendout <- p
 	}
+	time.Sleep(time.Second * 5)
 
-	time.Sleep(time.Second * 20)
-
-	client.Disconnect()
+	client.Sendout <- packet.NewDisconnect()
 	time.Sleep(time.Second * 2)
 }
