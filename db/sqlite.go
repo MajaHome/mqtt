@@ -9,22 +9,21 @@ import (
 )
 
 const (
-	createTables = `
-		CREATE TABLE IF NOT EXISTS auth (
-			ena bool default false,
-			login varchar2(64) not null,
-			pass varchar2(64) not null,
-			UNIQUE(login));
-		CREATE TABLE IF NOT EXISTS subscr (
-			id varchar2(64) not null,
-			topic varchar2(128),
-			qos number,
-		    UNIQUE(id, topic));
-		CREATE TABLE IF NOT EXISTS retain (
-			topic varchar2(128),
-			payload varchar2(128),
-			qos number,
-			UNIQUE(topic));`
+	createAuth = `CREATE TABLE IF NOT EXISTS auth (
+		ena bool default false,
+		login varchar2(64) not null,
+		pass varchar2(64) not null,
+		UNIQUE(login));`
+	createSubs = `CREATE TABLE IF NOT EXISTS subscr (
+		id varchar2(64) not null,
+		topic varchar2(128),
+		qos number,
+		UNIQUE(id, topic));`
+	createRetain = `CREATE TABLE IF NOT EXISTS retain (
+		topic varchar2(128),
+		payload varchar2(128),
+		qos number,
+		UNIQUE(topic));`
 
 	insertRetain = `INSERT INTO retain (topic, payload, qos) VALUES (?, ?, ?) 
 						ON CONFLICT (topic) DO
@@ -52,11 +51,23 @@ func Open(dbName string) error {
 	}
 
 	// create database
-	statement, err := db.Prepare(createTables)
+	auth, err := db.Prepare(createAuth)
 	if err != nil {
 		panic(err)
 	}
-	statement.Exec()
+	auth.Exec()
+
+	ret, err := db.Prepare(createRetain)
+	if err != nil {
+		panic(err)
+	}
+	ret.Exec()
+
+	subs, err := db.Prepare(createSubs)
+	if err != nil {
+		panic(err)
+	}
+	subs.Exec()
 
 	return nil
 }
