@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/MajaSuite/mqtt/broker"
+	"github.com/MajaSuite/mqtt/db"
 )
 
 var (
@@ -22,6 +23,11 @@ func main() {
 
 	if *debug {
 		log.Println("DEBUG mode ON")
+	}
+
+	log.Println("initialize database")
+	if err := db.Open("mqtt.db"); err != nil {
+		panic(err)
 	}
 
 	mqtt, err := broker.RunMqtt()

@@ -15,6 +15,7 @@ type Event struct {
 	Qos        int
 	Retain     bool
 	Dublicate  bool
+	Restore    bool
 }
 
 type EventTopic struct {

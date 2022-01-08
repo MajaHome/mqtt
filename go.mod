@@ -2,7 +2,4 @@ module github.com/MajaSuite/mqtt
 
 go 1.14
 
-require (
-	gorm.io/driver/sqlite v1.1.4
-	gorm.io/gorm v1.21.10
-)
+require github.com/mattn/go-sqlite3 v1.14.5

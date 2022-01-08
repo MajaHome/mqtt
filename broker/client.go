@@ -96,9 +96,9 @@ func (c *Client) Start() {
 		case packet.PING:
 			err = packet.WritePacket(c.conn, packet.NewPong(), debug)
 		case packet.SUBSCRIBE:
+			var qos []packet.QoS
 			req := pkt.(*packet.SubscribePacket)
 
-			var qos []packet.QoS
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				qos = append(qos, c.addSubscription(t))
@@ -112,8 +112,8 @@ func (c *Client) Start() {
 		case packet.UNSUBSCRIBE:
 			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
-
 			res.Id = req.Id
+
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				c.removeSubscription(t)
@@ -164,8 +164,8 @@ func (c *Client) Stop() {
 	c.conn.Close()
 }
 
+// TODO send 0x80 in qos in case of error
 func (c *Client) addSubscription(t transport.EventTopic) packet.QoS {
-	// send 0x80 in qos in case of error
 
 	// check for duplicate
 	for _, v := range c.subscription {
@@ -250,7 +250,7 @@ func (c *Client) Contains(topic string) bool {
 func (c *Client) String() string {
 	var will string
 	if c.will != nil {
-		will = fmt.Sprintf(", will: %s", c.will.String())
+		will = fmt.Sprintf(" will: %s,", c.will.String())
 	}
 
 	var subs string
@@ -258,6 +258,6 @@ func (c *Client) String() string {
 		subs += v.String() + ", "
 	}
 
-	return fmt.Sprintf("client {clientId: %s, session: %v%s, subscription: [%s]}",
+	return fmt.Sprintf("client {clientId: %s, session: %v,%s subscription: [%s]}",
 		c.clientId, c.session, will, subs)
 }
