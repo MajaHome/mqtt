@@ -18,7 +18,8 @@ func (m *Message) Length() int {
 }
 
 func (m *Message) Pack() []byte {
-	buf := make([]byte, m.Length())
+	lenBuff := WriteLength(m.Length())
+	buf := make([]byte, 1+len(lenBuff)+m.Length())
 
 	offset := WriteString(buf, 0, m.Topic)
 	offset = WriteString(buf, offset, m.Payload)

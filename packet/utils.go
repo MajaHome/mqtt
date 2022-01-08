@@ -94,11 +94,17 @@ func ReadPacket(conn net.Conn, debug bool) (Packet, error) {
 			if n, err := conn.Read(add); n < 1 || err != nil {
 				return nil, io.ErrUnexpectedEOF
 			}
-
-			packetLength += int(add[0]) - 1
+			header = append(header, add[0])
 			if add[0] <= 127 {
 				break
 			}
+		}
+
+		// convert
+		if x, n := binary.Uvarint(header[1:]); n != len(header[1:]) {
+			return nil, ErrInvalidPacketLength
+		} else {
+			packetLength = int(x)
 		}
 	}
 
@@ -150,13 +156,14 @@ func WritePacket(conn net.Conn, pkt Packet, debug bool) error {
 
 func WriteLength(len int) []byte {
 	var n int
+
 	if len < 128 {
 		n = 1
-	} else if n < 16384 {
+	} else if len < 16384 {
 		n = 2
-	} else if n < 2097152 {
+	} else if len < 2097152 {
 		n = 3
-	} else if n <= 268435455 {
+	} else if len <= 268435455 {
 		n = 4
 	}
 	buf := make([]byte, n)

@@ -17,16 +17,16 @@ const (
 )
 
 type MqttClient struct {
-	debug      bool
-	conn       net.Conn
-	clientId   string
-	keepalive  uint16
-	address    string
-	login      string
-	password   string
-	Broker     chan packet.Packet // messages from Broker
-	Sendout    chan packet.Packet // messages to Broker
-	stage      Stage
+	debug     bool
+	conn      net.Conn
+	clientId  string
+	keepalive uint16
+	address   string
+	login     string
+	password  string
+	Broker    chan packet.Packet // messages from Broker
+	Sendout   chan packet.Packet // messages to Broker
+	stage     Stage
 }
 
 func Connect(addr string, clientId string, keepAlive uint16, login string, pass string, debug bool) (*MqttClient, error) {
@@ -60,19 +60,17 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 
 	if resp.(*packet.ConnAckPacket).ReturnCode == 0 {
 		mqttClient := &MqttClient{
-			debug:    debug,
-			conn:     c,
-			address: addr,
-			clientId: clientId,
+			debug:     debug,
+			conn:      c,
+			address:   addr,
+			clientId:  clientId,
 			keepalive: keepAlive,
-			login: login,
-			password: pass,
-			Broker:   make(chan packet.Packet),
-			Sendout:  make(chan packet.Packet),
-			stage: CONNECTED,
+			login:     login,
+			password:  pass,
+			Broker:    make(chan packet.Packet),
+			Sendout:   make(chan packet.Packet),
+			stage:     CONNECTED,
 		}
-
-		go mqttClient.pinger(time.Duration(keepAlive))
 
 		return mqttClient, nil
 	}
@@ -104,7 +102,7 @@ func (c *MqttClient) reconnect() error {
 
 	if c.stage == RECONNECT {
 		for c.stage == RECONNECT {
-			time.Sleep(time.Second/10)
+			time.Sleep(time.Second / 10)
 		}
 		if c.stage == DISCONNECTED {
 			return packet.ErrConnect
@@ -182,6 +180,9 @@ func (c *MqttClient) Start() {
 		}
 	}()
 
+	go c.pinger(time.Duration(c.keepalive))
+
+	// read from network
 	for {
 		if c.stage == DISCONNECTED {
 			log.Println("stop mqtt client")
@@ -214,16 +215,16 @@ func (c *MqttClient) Start() {
 				c.Sendout <- p
 			}
 		case packet.PUBACK:
-			// answer on our publish (to ensure our PUBLISH was successfull)
+			// answer on our publish
 		case packet.PUBREC:
-			// answer on PUBLISH with qos2 (to ensure first step of PUBLISH was successfull)
+			// answer on our PUBLISH with qos2
 		case packet.PUBREL:
 			// answer on PUBREC
 			p := packet.NewPubComp()
 			p.Id = pkt.(*packet.PubRelPacket).Id
 			c.Sendout <- p
 		case packet.PUBCOMP:
-			// answer on PUBREL (to ensure second step of PUBLISH was successfull)
+			// answer on our PUBREL
 		case packet.DISCONNECT:
 			c.stage = DISCONNECTED
 		}

@@ -37,8 +37,8 @@ func (p *PublishPacket) Length() int {
 }
 
 func (p *PublishPacket) Unpack(buf []byte) error {
-	p.DUP = p.Header >> 3 & 0x1 == 1
-	p.Retain = p.Header & 0x1 == 1
+	p.DUP = p.Header>>3&0x1 == 1
+	p.Retain = p.Header&0x1 == 1
 	p.QoS = QoS(p.Header >> 1 & 0x3)
 
 	topicLen, offset, err := ReadInt16(buf, 0)
@@ -68,7 +68,7 @@ func (p *PublishPacket) Unpack(buf []byte) error {
 
 func (p *PublishPacket) Pack() []byte {
 	lenBuff := WriteLength(p.Length())
-	buf := make([]byte, 1 + len(lenBuff) + p.Length())
+	buf := make([]byte, 1+len(lenBuff)+p.Length())
 
 	var packetType uint8 = byte(PUBLISH) << 4
 	if p.Retain {
