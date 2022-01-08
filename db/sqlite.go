@@ -25,9 +25,7 @@ const (
 		qos number,
 		UNIQUE(topic));`
 
-	insertRetain = `INSERT INTO retain (topic, payload, qos) VALUES (?, ?, ?) 
-						ON CONFLICT (topic) DO
-						UPDATE SET payload = executed.payload AND qos = executed.qos;`
+	insertRetain       = `INSERT OR REPLACE INTO retain (topic, payload, qos) VALUES (?, ?, ?);`
 	deleteRetain       = `DELETE FROM retain WHERE topic = ? AND qos = ?;`
 	fetchRetain        = `SELECT topic, payload, qos FROM retain;`
 	insertSubscr       = `INSERT INTO subscr (id, topic, qos) VALUES (?, ?, ?);`
@@ -38,8 +36,7 @@ const (
 
 var (
 	ErrNotFound = errors.New("empty result set")
-
-	db *sql.DB
+	db          *sql.DB
 )
 
 func Open(dbName string) error {
@@ -79,16 +76,16 @@ func Close() {
 func SaveRetain(topic string, payload string, qos int) error {
 	statement, err := db.Prepare(insertRetain)
 	if err != nil {
-		log.Println("error prepare retain: %s", err)
+		log.Printf("error prepare retain: %s", err)
 		return err
 	}
 
 	if _, err = statement.Exec(topic, payload, qos); err != nil {
-		log.Println("error save retain data: %s", err)
+		log.Printf("error save retain data: %s", err)
 		return err
 	}
 
-	log.Println("saved retain message {topic: %s, payload: %s, qos: %d}", topic, payload, qos)
+	log.Printf("saved retain message {topic: %s, payload: %s, qos: %d}", topic, payload, qos)
 
 	return nil
 }
@@ -96,16 +93,16 @@ func SaveRetain(topic string, payload string, qos int) error {
 func DeleteRetain(topic string, qos int) error {
 	statement, err := db.Prepare(deleteRetain)
 	if err != nil {
-		log.Println("error delete retain: %s", err)
+		log.Printf("error delete retain: %s", err)
 		return err
 	}
 
 	if _, err = statement.Exec(topic, qos); err != nil {
-		log.Println("error delete retain data: %s", err)
+		log.Printf("error delete retain data: %s", err)
 		return err
 	}
 
-	log.Println("delete retain for topic %s qos %d", topic, qos)
+	log.Printf("delete retain for topic %s qos %d", topic, qos)
 
 	return nil
 }
@@ -113,7 +110,7 @@ func DeleteRetain(topic string, qos int) error {
 func FetchRetain() (map[string]transport.Event, error) {
 	query, err := db.Query(fetchRetain)
 	if err != nil {
-		log.Println("error prepare fetch retain: %s", err)
+		log.Printf("error prepare fetch retain: %s", err)
 		return nil, err
 	}
 	defer query.Close()
@@ -124,7 +121,7 @@ func FetchRetain() (map[string]transport.Event, error) {
 		var topic, payload string
 		var qos int
 		if err := query.Scan(&topic, &payload, &qos); err != nil {
-			log.Println("error fetch retain: %s", err)
+			log.Printf("error fetch retain: %s", err)
 		}
 		res[topic] = transport.Event{
 			Topic:   transport.EventTopic{Name: topic, Qos: qos},
@@ -144,16 +141,16 @@ func FetchRetain() (map[string]transport.Event, error) {
 func SaveSubscription(id string, topic string, qos int) error {
 	statement, err := db.Prepare(insertSubscr)
 	if err != nil {
-		log.Println("error prepare subscription: %s", err)
+		log.Printf("error prepare subscription: %s", err)
 		return err
 	}
 
 	if _, err = statement.Exec(id, topic, qos); err != nil {
-		log.Println("error save subscription data: %s", err)
+		log.Printf("error save subscription data: %s", err)
 		return err
 	}
 
-	log.Println("saved subscription {id: %s, topic: %s, qos: %d}", id, topic, qos)
+	log.Printf("saved subscription {id: %s, topic: %s, qos: %d}", id, topic, qos)
 
 	return nil
 }
@@ -161,16 +158,16 @@ func SaveSubscription(id string, topic string, qos int) error {
 func DeleteSubscription(id string, topic string) error {
 	statement, err := db.Prepare(deleteSubscription)
 	if err != nil {
-		log.Println("error delete subscription: %s", err)
+		log.Printf("error delete subscription: %s", err)
 		return err
 	}
 
 	if _, err = statement.Exec(id, topic); err != nil {
-		log.Println("error delete subscription data: %s", err)
+		log.Printf("error delete subscription data: %s", err)
 		return err
 	}
 
-	log.Println("delete subscription for client-id %s", id)
+	log.Printf("delete subscription for client-id %s", id)
 
 	return nil
 }
@@ -178,7 +175,7 @@ func DeleteSubscription(id string, topic string) error {
 func FetchSubcription(id string) (map[string]int, error) {
 	query, err := db.Query(fetchSubscription, id)
 	if err != nil {
-		log.Println("error prepare fetch subscription: %s", err)
+		log.Printf("error prepare fetch subscription: %s", err)
 		return nil, err
 	}
 	defer query.Close()
@@ -189,7 +186,7 @@ func FetchSubcription(id string) (map[string]int, error) {
 		var topic string
 		var qos int
 		if err := query.Scan(&topic, &qos); err != nil {
-			log.Println("error fetch subscription: %s", err)
+			log.Printf("error fetch subscription: %s", err)
 		}
 		res[topic] = qos
 	}
