@@ -24,16 +24,15 @@ type MqttClient struct {
 	address   string
 	login     string
 	password  string
-	Broker    chan packet.Packet // messages from Broker
-	Sendout   chan packet.Packet // messages to Broker
+	Receive   chan packet.Packet // messages from Broker
+	Send      chan packet.Packet // messages to Broker
 	stage     Stage
 }
 
-func Connect(addr string, clientId string, keepAlive uint16, login string, pass string, debug bool) (*MqttClient, error) {
-	// socket connect
+func Connect(addr string, clientId string, keepAlive uint16, login string, pass string, debug bool) *MqttClient {
 	c, err := net.Dial("tcp4", addr)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	// send connect
@@ -46,16 +45,16 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 	cp.Password = pass
 
 	if err := packet.WritePacket(c, cp, debug); err != nil {
-		return nil, err
+		return nil
 	}
 
 	resp, err := packet.ReadPacket(c, debug)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	if resp == nil || resp.Type() != packet.CONNACK {
-		return nil, packet.ErrProtocolError
+		return nil
 	}
 
 	if resp.(*packet.ConnAckPacket).ReturnCode == 0 {
@@ -67,15 +66,17 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 			keepalive: keepAlive,
 			login:     login,
 			password:  pass,
-			Broker:    make(chan packet.Packet),
-			Sendout:   make(chan packet.Packet),
+			Receive:   make(chan packet.Packet),
+			Send:      make(chan packet.Packet),
 			stage:     CONNECTED,
 		}
 
-		return mqttClient, nil
+		go mqttClient.pinger(time.Duration(keepAlive))
+		go mqttClient.start()
+		return mqttClient
 	}
 
-	return nil, packet.ErrConnect
+	return nil
 }
 
 func (c *MqttClient) pinger(keepAlive time.Duration) {
@@ -89,7 +90,7 @@ func (c *MqttClient) pinger(keepAlive time.Duration) {
 
 		if time.Now().After(nextPing) {
 			nextPing = time.Now().Add(time.Second * keepAlive)
-			c.Sendout <- packet.NewPing()
+			c.Send <- packet.NewPing()
 		}
 	}
 }
@@ -102,7 +103,7 @@ func (c *MqttClient) reconnect() error {
 
 	if c.stage == RECONNECT {
 		for c.stage == RECONNECT {
-			time.Sleep(time.Second / 10)
+			time.Sleep(time.Second / 30)
 		}
 		if c.stage == DISCONNECTED {
 			return packet.ErrConnect
@@ -112,6 +113,7 @@ func (c *MqttClient) reconnect() error {
 
 	c.stage = RECONNECT
 	c.conn.Close()
+
 	cp := packet.NewConnect()
 	cp.Version = 4
 	cp.VersionName = "MQTT"
@@ -122,6 +124,7 @@ func (c *MqttClient) reconnect() error {
 
 	for {
 		if conn, err := net.Dial("tcp4", c.address); err != nil {
+			time.Sleep(time.Second)
 			continue
 		} else {
 			c.conn = conn
@@ -142,36 +145,40 @@ func (c *MqttClient) reconnect() error {
 			c.stage = DISCONNECTED
 			return packet.ErrConnect
 		}
+
 		if resp.(*packet.ConnAckPacket).ReturnCode != 0 {
 			c.stage = DISCONNECTED
 			return packet.ErrConnect
-		} else {
-			break
 		}
+
+		log.Println("reconnect to mqtt successfully")
+		break
 	}
 
 	c.stage = CONNECTED
-
 	return nil
 }
 
-func (c *MqttClient) Start() {
+func (c *MqttClient) start() {
 	// send message to server
 	go func() {
-		for pkt := range c.Sendout {
+		for pkt := range c.Send {
 			if c.stage == DISCONNECTED {
 				return
 			}
 			if pkt.Type() == packet.DISCONNECT {
-				log.Println("disconnect from broker")
+				log.Println("disconnect from mqtt server")
 				packet.WritePacket(c.conn, pkt, c.debug)
 				c.stage = DISCONNECTED
 				c.conn.Close()
 				return
 			} else {
-				log.Println("send to server ", pkt.String())
+				if c.debug {
+					log.Println("send to mqtt server ", pkt.String())
+				}
+
 				if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
-					if c.reconnect() == packet.ErrConnect {
+					if c.reconnect() != nil {
 						return
 					}
 					packet.WritePacket(c.conn, pkt, c.debug)
@@ -180,21 +187,19 @@ func (c *MqttClient) Start() {
 		}
 	}()
 
-	go c.pinger(time.Duration(c.keepalive))
-
 	// read from network
 	for {
 		if c.stage == DISCONNECTED {
 			log.Println("stop mqtt client")
-			close(c.Broker)
-			close(c.Sendout)
+			close(c.Receive)
+			close(c.Send)
 			c.conn.Close()
 			return
 		}
 
 		pkt, err := packet.ReadPacket(c.conn, c.debug)
 		if err != nil {
-			if c.reconnect() == packet.ErrConnect {
+			if c.reconnect() != nil {
 				return
 			}
 			pkt, err = packet.ReadPacket(c.conn, c.debug)
@@ -203,16 +208,16 @@ func (c *MqttClient) Start() {
 		// manage received packet
 		switch pkt.Type() {
 		case packet.PUBLISH:
-			c.Broker <- pkt
+			c.Receive <- pkt
 			switch pkt.(*packet.PublishPacket).QoS {
 			case packet.AtLeastOnce: // PUBLISH -> PUBACK
 				p := packet.NewPubAck()
 				p.Id = pkt.(*packet.PublishPacket).Id
-				c.Sendout <- p
+				c.Send <- p
 			case packet.ExactlyOnce: // PUBLISH ->PUBREC, PUBREL - PUBCOMP
 				p := packet.NewPubRec()
 				p.Id = pkt.(*packet.PublishPacket).Id
-				c.Sendout <- p
+				c.Send <- p
 			}
 		case packet.PUBACK:
 			// answer on our publish
@@ -222,7 +227,7 @@ func (c *MqttClient) Start() {
 			// answer on PUBREC
 			p := packet.NewPubComp()
 			p.Id = pkt.(*packet.PubRelPacket).Id
-			c.Sendout <- p
+			c.Send <- p
 		case packet.PUBCOMP:
 			// answer on our PUBREL
 		case packet.DISCONNECT:
