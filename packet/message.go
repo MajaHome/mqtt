@@ -13,8 +13,16 @@ type Message struct {
 	Payload   string
 }
 
+func (m *Message) Type() Type {
+	return RESERVED
+}
+
 func (m *Message) Length() int {
 	return len(m.Topic) + 2 /*topicLen*/ + len(m.Payload) + 2 /*payload len*/
+}
+
+func (m *Message) Unpack(buf []byte) error {
+	return nil
 }
 
 func (m *Message) Pack() []byte {
@@ -28,6 +36,6 @@ func (m *Message) Pack() []byte {
 }
 
 func (m *Message) String() string {
-	return fmt.Sprintf("message: {topic: %s, qos: %d, retain: %v, dup: %v, flag: %v, payload: %s}",
+	return fmt.Sprintf(`{"topic":"%s","qos":%d,"retain":"%v","dup":"%v","flag":"%v","payload":"%s"}`,
 		m.Topic, m.QoS.Int(), m.Retain, m.Dublicate, m.Flag, m.Payload)
 }

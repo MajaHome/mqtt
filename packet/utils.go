@@ -108,23 +108,31 @@ func ReadPacket(conn net.Conn, debug bool) (Packet, error) {
 		}
 	}
 
-	log.Printf("read header: 0x%x, %d bytes\n", header[0], packetLength)
+	if debug {
+		log.Printf("read: header: 0x%x, %d bytes\n", header[0], packetLength)
+	}
 
 	pkt := Create(header[0])
 	if pkt == nil {
-		log.Println("read: error create packet")
+		if debug {
+			log.Println("read: error create packet")
+		}
 		return nil, ErrUnknownPacket
 	}
 
 	if packetLength != 0 {
 		payload := make([]byte, packetLength)
 		if n, err := conn.Read(payload); n < packetLength || err != nil {
-			log.Printf("read only %d bytes, try to read last one\n", n)
+			if debug {
+				log.Printf("read only %d bytes, try to read last one\n", n)
+			}
 			last, err := conn.Read(payload[n:])
 			if err != nil {
 				return nil, io.ErrUnexpectedEOF
 			}
-			log.Printf("read last %d bytes, seems fine now\n", last)
+			if debug {
+				log.Printf("read last %d bytes, seems fine now\n", last)
+			}
 		}
 
 		if debug {
@@ -134,7 +142,9 @@ func ReadPacket(conn net.Conn, debug bool) (Packet, error) {
 		pkt.Unpack(payload)
 	}
 
-	log.Println("read packet:", pkt.String())
+	if debug {
+		log.Println("read packet:", pkt.String())
+	}
 
 	return pkt, nil
 }
@@ -147,9 +157,6 @@ func WritePacket(conn net.Conn, pkt Packet, debug bool) error {
 	}
 
 	_, err := conn.Write(packed)
-	if err != nil {
-		log.Println("write: ", err)
-	}
 
 	return err
 }

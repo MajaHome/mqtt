@@ -19,10 +19,10 @@ var (
 
 func main() {
 	flag.Parse()
-	log.Println("Starting broker ...")
+	log.Println("starting broker ...")
 
 	if *debug {
-		log.Println("DEBUG mode ON")
+		log.Println("DEBUG mode is ON")
 	}
 
 	log.Println("initialize database")
@@ -30,15 +30,15 @@ func main() {
 		panic(err)
 	}
 
-	mqtt, err := broker.RunMqtt()
-	if err != nil {
-		log.Panic("error running mqtt broker", err)
+	listener := broker.NewListener(*debug)
+	if listener == nil {
+		log.Panic("error start listener")
 	}
 
-	engine := broker.NewEngine(*debug)
-	engine.ManageServer(mqtt)
+	broker.NewMqtt(*debug, listener)
 
 	finish := make(chan os.Signal, 1)
 	signal.Notify(finish, syscall.SIGINT, syscall.SIGTERM)
 	<-finish
+	log.Println("finished")
 }

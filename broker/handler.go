@@ -11,9 +11,11 @@ import (
 )
 
 type Client struct {
+	debug        bool
 	conn         net.Conn
-	engineChan   chan transport.Event
-	clientChan   chan transport.Event
+	messageId    uint16
+	toEngine     chan transport.Event
+	toSendOut    chan transport.Event
 	clientId     string
 	session      bool                   // clean or persisted session
 	subscription []transport.EventTopic // subscribed topics
@@ -21,20 +23,26 @@ type Client struct {
 	stop         bool // flag to stop
 }
 
-func NewClient(id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
+func NewClient(debug bool, id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
 	return &Client{
-		conn:       conn,
-		engineChan: channel,
-		clientChan: make(chan transport.Event),
-		clientId:   id,
-		session:    session,
+		debug:     debug,
+		conn:      conn,
+		messageId: 0,
+		toEngine:  channel,
+		toSendOut: make(chan transport.Event),
+		clientId:  id,
+		session:   session,
 	}
 }
 
 func (c *Client) Start() {
+	if !c.stop {
+		// already started
+		return
+	}
+
 	var pkt packet.Packet
 	var err error
-
 	c.stop = false
 	for {
 		if c.stop {
@@ -42,59 +50,67 @@ func (c *Client) Start() {
 			return
 		}
 
+		// send messages to client
 		go func() {
-			for e := range c.clientChan {
-				log.Println("client receive message: " + e.String())
-
-				var res packet.Packet
-				switch e.PacketType {
-				case packet.PUBLISH:
-					res = packet.NewPublish()
-					res.(*packet.PublishPacket).Id = e.MessageId
-					res.(*packet.PublishPacket).Topic = e.Topic.Name
-					res.(*packet.PublishPacket).QoS = packet.QoS(e.Topic.Qos)
-					res.(*packet.PublishPacket).Payload = e.Payload
-					res.(*packet.PublishPacket).Retain = e.Retain
-					res.(*packet.PublishPacket).DUP = e.Dublicate
-				case packet.PUBACK:
-					res = packet.NewPubAck()
-					res.(*packet.PubAckPacket).Id = e.MessageId
-				case packet.PUBREC:
-					res = packet.NewPubRec()
-					res.(*packet.PubRecPacket).Id = e.MessageId
-				case packet.PUBCOMP:
-					res = packet.NewPubComp()
-					res.(*packet.PubCompPacket).Id = e.MessageId
-				default:
-					log.Println("wrong packet from engine")
+			for event := range c.toSendOut {
+				if c.debug {
+					log.Println("message to send to client", event)
 				}
 
-				if err := packet.WritePacket(c.conn, res, debug); err != nil {
-					c.engineChan <- transport.Event{ClientId: c.clientId} // send to engine unexpected disconnect
-					log.Println("client disconnect while write to socket")
+				var res packet.Packet
+
+				switch event.PacketType {
+				case packet.PUBLISH:
+					publish := packet.NewPublish()
+					publish.Id = event.MessageId
+					publish.Topic = event.Topic.Name
+					publish.QoS = packet.QoS(event.Topic.Qos)
+					publish.Payload = event.Payload
+					publish.Retain = event.Retain
+					publish.DUP = event.Dublicate
+					res = publish
+				case packet.PUBACK:
+					ack := packet.NewPubAck()
+					ack.Id = event.MessageId
+					res = ack
+				case packet.PUBREC:
+					rec := packet.NewPubRec()
+					rec.Id = event.MessageId
+					res = rec
+				case packet.PUBCOMP:
+					comp := packet.NewPubComp()
+					comp.Id = event.MessageId
+					res = comp
+				default:
+					log.Println("wrong packet from engine")
+					continue
+				}
+
+				if err := packet.WritePacket(c.conn, res, c.debug); err != nil {
+					c.toEngine <- transport.Event{ClientId: c.clientId}
+					log.Println("client disconnect while write to socket", err)
 					c.Stop()
 					return
 				}
 			}
 		}()
 
-		if pkt, err = packet.ReadPacket(c.conn, debug); err != nil {
+		if pkt, err = packet.ReadPacket(c.conn, c.debug); err != nil {
 			log.Println("err read packet, disconnected: ", err.Error())
 			c.Stop()
 
-			// send to engineChan unexpected disconnect
-			c.engineChan <- transport.Event{ClientId: c.clientId}
-
+			// send to toEngine unexpected disconnect
+			c.toEngine <- transport.Event{ClientId: c.clientId}
 			return
 		}
 
 		switch pkt.Type() {
 		case packet.DISCONNECT:
-			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
-			err = packet.WritePacket(c.conn, packet.NewDisconnect(), debug)
+			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
+			err = packet.WritePacket(c.conn, packet.NewDisconnect(), c.debug)
 			c.Stop()
 		case packet.PING:
-			err = packet.WritePacket(c.conn, packet.NewPong(), debug)
+			err = packet.WritePacket(c.conn, packet.NewPong(), c.debug)
 		case packet.SUBSCRIBE:
 			var qos []packet.QoS
 			req := pkt.(*packet.SubscribePacket)
@@ -102,13 +118,13 @@ func (c *Client) Start() {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				qos = append(qos, c.addSubscription(t))
-				c.engineChan <- transport.Event{MessageId: req.Id, ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
+				c.toEngine <- transport.Event{MessageId: req.Id, ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
 			}
 
 			res := packet.NewSubAck()
 			res.Id = req.Id
 			res.ReturnCodes = qos
-			err = packet.WritePacket(c.conn, res, debug)
+			err = packet.WritePacket(c.conn, res, c.debug)
 		case packet.UNSUBSCRIBE:
 			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
@@ -117,11 +133,11 @@ func (c *Client) Start() {
 			for _, topic := range req.Topics {
 				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
 				c.removeSubscription(t)
-				err = packet.WritePacket(c.conn, res, debug)
+				err = packet.WritePacket(c.conn, res, c.debug)
 			}
 		case packet.PUBLISH:
 			req := pkt.(*packet.PublishPacket)
-			c.engineChan <- transport.Event{
+			c.toEngine <- transport.Event{
 				ClientId:   c.clientId,
 				PacketType: pkt.Type(),
 				MessageId:  req.Id,
@@ -133,27 +149,23 @@ func (c *Client) Start() {
 			}
 		case packet.PUBREC:
 			req := pkt.(*packet.PubRecPacket)
-			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		case packet.PUBREL:
 			req := pkt.(*packet.PubRelPacket)
-			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		case packet.PUBACK:
 			req := pkt.(*packet.PubAckPacket)
-			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		case packet.PUBCOMP:
 			req := pkt.(*packet.PubCompPacket)
-			c.engineChan <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
 		default:
 			err = packet.ErrUnknownPacket
 		}
-
 		if err != nil {
-			log.Println("err serve, disconnected: ", err.Error())
+			log.Println("unable to manage request, disconnect.", err)
 			c.Stop()
-
-			// send to engineChan unexpected disconnect
-			c.engineChan <- transport.Event{ClientId: c.clientId}
-
+			c.toEngine <- transport.Event{ClientId: c.clientId}
 			return
 		}
 	}
@@ -164,9 +176,7 @@ func (c *Client) Stop() {
 	c.conn.Close()
 }
 
-// TODO send 0x80 in qos in case of error
 func (c *Client) addSubscription(t transport.EventTopic) packet.QoS {
-
 	// check for duplicate
 	for _, v := range c.subscription {
 		if v.Name == t.Name {
