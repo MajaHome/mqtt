@@ -15,7 +15,8 @@ var (
 )
 
 func main() {
-	client := transport.Connect("127.0.0.1:1883", "go-mqttclient", 30, "", "", *debug)
+	flag.Parse()
+	client := transport.Connect("127.0.0.1:1883", "go-mqttclient", 30, false, "", "", *debug)
 	if client == nil {
 		panic("can't connect to mqtt server")
 	}
@@ -31,13 +32,12 @@ func main() {
 	s := packet.NewSubscribe()
 	s.Id = 123
 	s.Topics = []packet.SubscribePayload{
-		{Topic: "home/topic", QoS: 0},
-		{Topic: "home/another", QoS: 1},
+		{Topic: "home/topic", QoS: 1},
+		{Topic: "home/another", QoS: 2},
 	}
 	log.Println("send", s)
 	client.Send <- s
 
-	log.Println("sleep")
 	time.Sleep(time.Second * 2)
 
 	u := packet.NewUnSub()
@@ -49,25 +49,32 @@ func main() {
 	client.Send <- u
 
 	p := packet.NewPublish()
-	p.Id = uint16(783)
+	p.Id = uint16(2)
 	p.Topic = "home/topic"
 	p.QoS = 1
-	p.Payload = "{\"name\":\"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow\",\"model\":\"yeelink.light.mono5\", \"token\":\"cfcb32279b1a033a72aa69601ff15f01\",\"mac\":\"5C:E5:0C:CC:6B:27\"}, qos: 1, retain: false, dup:false}"
+	p.Payload = "{\"name\":\"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugbocfcb32279b1a033a72aa69601ff15f027}"
 	log.Println("send", p)
 	client.Send <- p
+
+	time.Sleep(time.Second * 500)
+
+	/*
+		{id: 783, topic: home/topic, payload: {"name":"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow","model":"yeelink.light.mono5", "token":"cfcb32279b1a033a72aa69601ff15f01","mac":"5C:E5:0C:CC:6B:27"}, qos: 1, retain: false, dup:false}, qos: 1, retain: false, dup:false}
+		{id: 0,   topic: home/topic, payload: {"name":"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow","model":"yeelink.light.mono5", "token":"cfcb32279b1a033a72aa69601ff15f01","mac":"5C:E5:0C:CC:6B:27"}, qos: 1, retain: false, dup:false}, qos: 0, retain: false, dup:false}
+	*/
 
 	for i := 0; i < 5; i++ {
 		p := packet.NewPublish()
 		p.Id = uint16(i)
 		p.Topic = "home/topic"
 		p.Payload = "{\"message\":\"" + strconv.Itoa(i) + "\"}"
-		p.QoS = 2
+		p.QoS = 0
 		log.Println("send", p)
 		client.Send <- p
 	}
 
-	log.Println("sleep 5")
-	time.Sleep(time.Second * 5)
+	log.Println("sleep 50")
+	time.Sleep(time.Second * 50)
 
 	log.Println("disconnect", packet.NewDisconnect())
 	client.Send <- packet.NewDisconnect()

@@ -2,6 +2,7 @@ package packet
 
 import (
 	"fmt"
+	"log"
 )
 
 type PublishPacket struct {
@@ -67,6 +68,7 @@ func (p *PublishPacket) Unpack(buf []byte) error {
 }
 
 func (p *PublishPacket) Pack() []byte {
+	log.Println("<<<<<<<<<<<<<<< ", p)
 	lenBuff := WriteLength(p.Length())
 	buf := make([]byte, 1+len(lenBuff)+p.Length())
 

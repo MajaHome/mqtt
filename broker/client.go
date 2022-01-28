@@ -21,29 +21,31 @@ type Client struct {
 	subscription []transport.EventTopic // subscribed topics
 	will         *packet.Message
 	stop         bool // flag to stop
+	started      bool
 }
 
 func NewClient(debug bool, id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
 	return &Client{
 		debug:     debug,
 		conn:      conn,
-		messageId: 0,
+		messageId: 1,
 		toEngine:  channel,
 		toSendOut: make(chan transport.Event),
 		clientId:  id,
 		session:   session,
+		started:   false,
 	}
 }
 
 func (c *Client) Start() {
-	if !c.stop {
-		// already started
+	if c.started {
 		return
 	}
+	c.stop = false
+	c.started = true
 
 	var pkt packet.Packet
 	var err error
-	c.stop = false
 	for {
 		if c.stop {
 			log.Printf("client %s disconnected\n", c.clientId)
@@ -64,7 +66,7 @@ func (c *Client) Start() {
 					publish := packet.NewPublish()
 					publish.Id = event.MessageId
 					publish.Topic = event.Topic.Name
-					publish.QoS = packet.QoS(event.Topic.Qos)
+					publish.QoS = packet.QoS(event.Qos)
 					publish.Payload = event.Payload
 					publish.Retain = event.Retain
 					publish.DUP = event.Dublicate
@@ -109,6 +111,7 @@ func (c *Client) Start() {
 			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
 			err = packet.WritePacket(c.conn, packet.NewDisconnect(), c.debug)
 			c.Stop()
+			return
 		case packet.PING:
 			err = packet.WritePacket(c.conn, packet.NewPong(), c.debug)
 		case packet.SUBSCRIBE:

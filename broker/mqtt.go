@@ -1,31 +1,31 @@
 package broker
 
 import (
+	"fmt"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
 	"log"
+	"time"
 )
 
 type Mqtt struct {
 	debug         bool
 	brokerChannel chan transport.Event // channel to mqtt broker to manage
 	clients       map[string]*Client
-	sent          map[uint16]transport.Event
-	sentWithQos   map[uint16]transport.Event
+	sent          map[string]transport.Event
+	sentWithQos   map[string]transport.Event
 	retain        map[string]transport.Event
 }
 
 func NewMqtt(debug bool, listener *Server) *Mqtt {
 	m := &Mqtt{
 		debug:         debug,
-		clients:       make(map[string]*Client),
 		brokerChannel: make(chan transport.Event),
-		sent:          make(map[uint16]transport.Event),
-		sentWithQos:   make(map[uint16]transport.Event),
+		clients:       make(map[string]*Client),
+		sent:          make(map[string]transport.Event),
+		sentWithQos:   make(map[string]transport.Event),
 		retain:        make(map[string]transport.Event),
 	}
-
-	go m.broker()
 
 	go func() {
 		for {
@@ -39,6 +39,8 @@ func NewMqtt(debug bool, listener *Server) *Mqtt {
 			go m.processConnect(conn)
 		}
 	}()
+	go m.broker()
+	go m.rescan()
 
 	return m
 }
@@ -51,9 +53,10 @@ func (e *Mqtt) publishMessage(event transport.Event) {
 		for _, client := range e.clients {
 			if client != nil && client.conn != nil {
 				if client.Contains(event.Topic.Name) {
+					event.MessageId = client.messageId
+					client.messageId++
 					if event.Qos > 0 {
-						// todo incorrect key
-						e.sent[event.MessageId] = event
+						e.sent[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)] = event
 					}
 					client.toSendOut <- event
 				}
@@ -61,6 +64,11 @@ func (e *Mqtt) publishMessage(event transport.Event) {
 		}
 	} else {
 		// send to only one client
+		event.MessageId = e.clients[event.ClientId].messageId
+		e.clients[event.ClientId].messageId++
+		if event.Qos > 0 {
+			e.sent[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)] = event
+		}
 		e.clients[event.ClientId].toSendOut <- event
 	}
 }
@@ -89,4 +97,16 @@ func (e *Mqtt) sendWill(client *Client) {
 	}
 }
 
-// TODO once per minute rescan e.sent and try to send again (in pinger may be?)
+func (e *Mqtt) rescan() {
+	for {
+		if e.debug {
+			log.Println("rescan queue for ack")
+		}
+
+		//for id, event := range e.sent {
+		//	// TODO try to send messages without ack again
+		//}
+
+		time.Sleep(time.Second * 10)
+	}
+}

@@ -19,11 +19,7 @@ var (
 
 func main() {
 	flag.Parse()
-	log.Println("starting broker ...")
-
-	if *debug {
-		log.Println("DEBUG mode is ON")
-	}
+	log.Println("starting broker")
 
 	log.Println("initialize database")
 	if err := db.Open("mqtt.db"); err != nil {

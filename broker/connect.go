@@ -43,7 +43,11 @@ func (e *Mqtt) processConnect(conn net.Conn) {
 
 		if !connPacket.CleanSession {
 			res.Session = true
-			connPacket.ClientID = connPacket.Username
+			if len(connPacket.Username) == 0 {
+				res.ReturnCode = uint8(packet.ConnectNotAuthorized)
+			} else {
+				connPacket.ClientID = connPacket.Username
+			}
 		}
 		err = packet.WritePacket(conn, res, e.debug)
 		if err != nil {
@@ -61,6 +65,7 @@ func (e *Mqtt) processConnect(conn net.Conn) {
 
 		client := NewClient(e.debug, connPacket.ClientID, conn, res.Session, e.brokerChannel)
 		if e.clients[client.clientId] != nil {
+			log.Println("override")
 			// override connection. onlu one connection with user/pass allowed
 			e.clients[client.clientId].conn.Close()
 			e.clients[client.clientId].conn = conn

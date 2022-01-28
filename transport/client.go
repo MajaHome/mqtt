@@ -29,7 +29,7 @@ type MqttClient struct {
 	stage     Stage
 }
 
-func Connect(addr string, clientId string, keepAlive uint16, login string, pass string, debug bool) *MqttClient {
+func Connect(addr string, clientId string, keepAlive uint16, session bool, login string, pass string, debug bool) *MqttClient {
 	c, err := net.Dial("tcp4", addr)
 	if err != nil {
 		return nil
@@ -43,6 +43,7 @@ func Connect(addr string, clientId string, keepAlive uint16, login string, pass 
 	cp.KeepAlive = keepAlive
 	cp.Username = login
 	cp.Password = pass
+	cp.CleanSession = !session
 
 	if err := packet.WritePacket(c, cp, debug); err != nil {
 		return nil
@@ -166,6 +167,7 @@ func (c *MqttClient) start() {
 			if c.stage == DISCONNECTED {
 				return
 			}
+
 			if pkt.Type() == packet.DISCONNECT {
 				log.Println("disconnect from mqtt server")
 				packet.WritePacket(c.conn, pkt, c.debug)

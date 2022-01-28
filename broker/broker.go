@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"fmt"
 	"github.com/MajaSuite/mqtt/db"
 	"github.com/MajaSuite/mqtt/packet"
 	"github.com/MajaSuite/mqtt/transport"
@@ -71,30 +72,29 @@ func (e *Mqtt) broker() {
 					ClientId: event.ClientId}
 
 				// record packet in delivery queue
-				e.sentWithQos[event.MessageId] = event
+				e.sentWithQos[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)] = event
 			}
 		case packet.PUBACK:
 			// we receive answer on our publish command with QOS(1)
-			_, ok := e.sent[event.MessageId]
+			_, ok := e.sent[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)]
 			if ok {
 				// remove from sent queue
-				delete(e.sent, event.MessageId)
+				delete(e.sent, fmt.Sprintf("%s/%d", event.ClientId, event.MessageId))
 			} else {
 				log.Printf("error process PUBACK, message %d for %s was not found", event.MessageId, event.ClientId)
 			}
 		case packet.PUBREC:
 			// we receive answer on our PUBLISH with qos2,
-			answer, ok := e.sent[event.MessageId] // todo different client may have same message-id
+			answer, ok := e.sent[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)]
 			if ok && event.ClientId == answer.ClientId {
 				// send PUBREL
 				e.clients[event.ClientId].toSendOut <- transport.Event{PacketType: packet.PUBREL,
 					ClientId: event.ClientId, MessageId: event.MessageId}
 			} else {
-				// todo
 				log.Printf("error process PUBREC, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		case packet.PUBREL:
-			event, ok := e.sentWithQos[event.MessageId]
+			event, ok := e.sentWithQos[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)]
 			if ok {
 				// send answer PUBCOMP
 				e.clients[event.ClientId].toSendOut <- transport.Event{PacketType: packet.PUBCOMP,
@@ -104,15 +104,15 @@ func (e *Mqtt) broker() {
 				e.publishMessage(event)
 
 				// remove from delivery queue
-				delete(e.sentWithQos, event.MessageId)
+				delete(e.sentWithQos, fmt.Sprintf("%s/%d", event.ClientId, event.MessageId))
 			} else {
 				log.Printf("error process PUBREL, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
 		case packet.PUBCOMP:
 			// we receive answer on PUBREL
-			_, ok := e.sent[event.MessageId]
+			_, ok := e.sent[fmt.Sprintf("%s/%d", event.ClientId, event.MessageId)]
 			if ok {
-				delete(e.sent, event.MessageId)
+				delete(e.sent, fmt.Sprintf("%s/%d", event.ClientId, event.MessageId))
 			} else {
 				log.Printf("error process PUBCOMP, message %d for %s was not found\n", event.MessageId, event.ClientId)
 			}
