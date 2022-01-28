@@ -17,7 +17,7 @@ func NewSubAck() *SubAckPacket {
 
 func CreateSubAck(buf byte) *SubAckPacket {
 	return &SubAckPacket{
-		Header: buf,
+		Header:      buf,
 		ReturnCodes: []QoS{},
 	}
 }
@@ -37,7 +37,7 @@ func (sack *SubAckPacket) Unpack(buf []byte) error {
 	}
 	sack.Id = id
 
-	for left := len(buf)-2; left > 0; left-- {
+	for left := len(buf) - 2; left > 0; left-- {
 		var qos byte
 		qos, offset, err = ReadInt8(buf, offset)
 		sack.ReturnCodes = append(sack.ReturnCodes, QoS(qos))
@@ -63,7 +63,7 @@ func (sack *SubAckPacket) Pack() []byte {
 func (sack *SubAckPacket) String() string {
 	var codes string
 	for _, rc := range sack.ReturnCodes {
-		codes += rc.String()+", "
+		codes += rc.String() + ", "
 	}
 
 	return fmt.Sprintf("SubAck: {id: %d, codes: [%s]}", sack.Id, codes)

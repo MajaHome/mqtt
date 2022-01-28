@@ -1,9 +1,8 @@
 package transport
 
 import (
+	"fmt"
 	"github.com/MajaSuite/mqtt/packet"
-	"strconv"
-	"strings"
 )
 
 type Event struct {
@@ -24,21 +23,10 @@ type EventTopic struct {
 }
 
 func (t *EventTopic) String() string {
-	return "{ name: " + t.Name + ", qos: " + strconv.Itoa(t.Qos) + "}"
+	return fmt.Sprintf(`{"name":"%s","qos":%d}`, t.Name, t.Qos)
 }
 
 func (e Event) String() string {
-	var sb strings.Builder
-
-	sb.WriteString("Event: { ")
-	sb.WriteString("clientId: \"" + e.ClientId + "\", ")
-	sb.WriteString("type:\"" + e.PacketType.String() + "\", ")
-	sb.WriteString("messageId: \"" + strconv.Itoa(int(e.MessageId)) + "\", ")
-	sb.WriteString("topic: " + e.Topic.String() + ", ")
-	sb.WriteString("payload: \"" + e.Payload + "\", ")
-	sb.WriteString("qos: " + strconv.Itoa(e.Qos) + ", ")
-	sb.WriteString("retain: " + strconv.FormatBool(e.Retain) + ", ")
-	sb.WriteString("dublicate: " + strconv.FormatBool(e.Dublicate) + "}")
-
-	return sb.String()
+	return fmt.Sprintf(`{"clientid","%s","type","%s","messageid":%d,"topic":%v,"payload","%s","qos":%d,"retain":%v,"dup":%v}`,
+		e.ClientId, e.PacketType, e.MessageId, e.Topic.String(), e.Payload, e.Qos, e.Retain, e.Dublicate)
 }

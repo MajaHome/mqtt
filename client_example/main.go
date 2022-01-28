@@ -56,14 +56,9 @@ func main() {
 	log.Println("send", p)
 	client.Send <- p
 
-	time.Sleep(time.Second * 500)
+	time.Sleep(time.Second * 5)
 
-	/*
-		{id: 783, topic: home/topic, payload: {"name":"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow","model":"yeelink.light.mono5", "token":"cfcb32279b1a033a72aa69601ff15f01","mac":"5C:E5:0C:CC:6B:27"}, qos: 1, retain: false, dup:false}, qos: 1, retain: false, dup:false}
-		{id: 0,   topic: home/topic, payload: {"name":"uiwyfencbo47ryo34cnoeirwcfuoegiruoiertwupoiqwucbveprugpt485ugboewugboeirueow","model":"yeelink.light.mono5", "token":"cfcb32279b1a033a72aa69601ff15f01","mac":"5C:E5:0C:CC:6B:27"}, qos: 1, retain: false, dup:false}, qos: 0, retain: false, dup:false}
-	*/
-
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 5000; i++ {
 		p := packet.NewPublish()
 		p.Id = uint16(i)
 		p.Topic = "home/topic"
@@ -78,5 +73,5 @@ func main() {
 
 	log.Println("disconnect", packet.NewDisconnect())
 	client.Send <- packet.NewDisconnect()
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second)
 }

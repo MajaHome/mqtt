@@ -171,7 +171,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 
 func (c *ConnPacket) Pack() []byte {
 	lenBuff := WriteLength(c.Length())
-	buf := make([]byte, 1 + len(lenBuff) + c.Length())
+	buf := make([]byte, 1+len(lenBuff)+c.Length())
 
 	offset := WriteInt8(buf, 0, byte(CONNECT)<<4)
 	offset = WriteBytes(buf, offset, lenBuff)

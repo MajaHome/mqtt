@@ -62,7 +62,7 @@ func (s *SubscribePacket) Unpack(buf []byte) error {
 	}
 	s.Id = id
 
-	for left := len(buf)-2; left > 0; {
+	for left := len(buf) - 2; left > 0; {
 		var topicLen uint16
 		topicLen, offset, err = ReadInt16(buf, offset)
 		if err != nil {
@@ -87,7 +87,7 @@ func (s *SubscribePacket) Unpack(buf []byte) error {
 
 func (s *SubscribePacket) Pack() []byte {
 	lenBuff := WriteLength(s.Length())
-	buf := make([]byte, 1 + len(lenBuff) + s.Length())
+	buf := make([]byte, 1+len(lenBuff)+s.Length())
 
 	offset := WriteInt8(buf, 0, byte(SUBSCRIBE)<<4)
 	offset = WriteBytes(buf, offset, lenBuff)

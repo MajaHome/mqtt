@@ -30,7 +30,7 @@ func (u *UnSubscribePacket) Length() int {
 	for _, p := range u.Topics {
 		l += p.Length()
 	}
-	return 2/*id*/ + l
+	return 2 /*id*/ + l
 }
 
 func (u *UnSubscribePacket) Unpack(buf []byte) error {
@@ -40,7 +40,7 @@ func (u *UnSubscribePacket) Unpack(buf []byte) error {
 	}
 	u.Id = id
 
-	for left := len(buf)-2; left > 0;  {
+	for left := len(buf) - 2; left > 0; {
 		var topicLen uint16
 		var topic string
 		var qos uint8
@@ -58,7 +58,7 @@ func (u *UnSubscribePacket) Unpack(buf []byte) error {
 		qos, offset, err = ReadInt8(buf, offset)
 
 		u.Topics = append(u.Topics, SubscribePayload{Topic: topic, QoS: QoS(qos)})
-		left -= 2+len(topic)+1
+		left -= 2 + len(topic) + 1
 	}
 
 	return nil
@@ -66,7 +66,7 @@ func (u *UnSubscribePacket) Unpack(buf []byte) error {
 
 func (u *UnSubscribePacket) Pack() []byte {
 	lenBuff := WriteLength(u.Length())
-	buf := make([]byte, 1 + len(lenBuff) + u.Length())
+	buf := make([]byte, 1+len(lenBuff)+u.Length())
 
 	offset := WriteInt8(buf, 0, byte(UNSUBSCRIBE)<<4)
 	offset = WriteBytes(buf, offset, lenBuff)
@@ -84,7 +84,7 @@ func (u *UnSubscribePacket) Pack() []byte {
 func (u *UnSubscribePacket) String() string {
 	var topics string
 	for _, t := range u.Topics {
-		topics += t.String()+", "
+		topics += t.String() + ", "
 	}
 
 	return fmt.Sprintf("Unsubscribe: {id: %d, topics: [%s]}", u.Id, topics)

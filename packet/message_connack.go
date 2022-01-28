@@ -61,7 +61,7 @@ func (cack *ConnAckPacket) Pack() []byte {
 	buf := make([]byte, 4)
 
 	buf[0] = byte(CONNACK) << 4
-	buf[1] = byte(2)		// length
+	buf[1] = byte(2) // length
 	if cack.Session {
 		buf[2] = 0x01
 	} else {
