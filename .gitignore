@@ -5,4 +5,5 @@
 *.key
 *.db
 mqtt
+client
 client_example/client_example

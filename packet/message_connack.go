@@ -2,6 +2,7 @@ package packet
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 )
 
 const (
@@ -14,6 +15,7 @@ const (
 )
 
 type ConnAckPacket struct {
+	PacketImpl
 	Header     byte
 	Session    bool
 	ReturnCode uint8
@@ -39,7 +41,7 @@ func (cack *ConnAckPacket) Length() int {
 }
 
 func (cack *ConnAckPacket) Unpack(buf []byte) error {
-	acknowledge, offset, err := ReadInt8(buf, 0)
+	acknowledge, offset, err := utils.ReadInt8(buf, 0)
 	if err != nil {
 		return err
 	}
@@ -49,7 +51,7 @@ func (cack *ConnAckPacket) Unpack(buf []byte) error {
 	}
 	cack.Session = (acknowledge == 1)
 
-	cack.ReturnCode, offset, err = ReadInt8(buf, offset)
+	cack.ReturnCode, offset, err = utils.ReadInt8(buf, offset)
 	if err != nil {
 		return err
 	}

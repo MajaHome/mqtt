@@ -2,17 +2,19 @@ package packet
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 	"log"
 )
 
 type ConnPacket struct {
+	PacketImpl
 	Header       byte
 	ClientID     string
 	KeepAlive    uint16
 	Username     string
 	Password     string
 	CleanSession bool
-	Will         *Message
+	Will         *WillMessage
 	Version      byte
 	VersionName  string
 }
@@ -52,17 +54,17 @@ func (c *ConnPacket) Length() int {
 }
 
 func (c *ConnPacket) Unpack(buf []byte) error {
-	versionLen, offset, err := ReadInt16(buf, 0)
+	versionLen, offset, err := utils.ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
 
-	c.VersionName, offset, err = ReadString(buf, offset, int(versionLen))
+	c.VersionName, offset, err = utils.ReadString(buf, offset, int(versionLen))
 	if err != nil {
 		return err
 	}
 
-	c.Version, offset, err = ReadInt8(buf, offset)
+	c.Version, offset, err = utils.ReadInt8(buf, offset)
 	if err != nil {
 		return err
 	}
@@ -73,7 +75,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 		return ErrProtocolError
 	}
 
-	flag, offset, err := ReadInt8(buf, offset)
+	flag, offset, err := utils.ReadInt8(buf, offset)
 	if err != nil {
 		return err
 	}
@@ -101,12 +103,12 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 
 	c.CleanSession = ((flag >> 1) & 0x1) == 1
 
-	c.KeepAlive, offset, err = ReadInt16(buf, offset)
+	c.KeepAlive, offset, err = utils.ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
 
-	clidLen, offset, err := ReadInt16(buf, offset)
+	clidLen, offset, err := utils.ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
@@ -114,7 +116,7 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 		return ErrUnknownPacket
 	}
 
-	c.ClientID, offset, err = ReadString(buf, offset, int(clidLen))
+	c.ClientID, offset, err = utils.ReadString(buf, offset, int(clidLen))
 	if err != nil {
 		return err
 	}
@@ -124,19 +126,19 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 		var willTopicLen, willMessageLen uint16
 		var willTopic, willMessage string
 
-		willTopicLen, offset, err = ReadInt16(buf, offset)
+		willTopicLen, offset, err = utils.ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
-		willTopic, offset, err = ReadString(buf, offset, int(willTopicLen))
+		willTopic, offset, err = utils.ReadString(buf, offset, int(willTopicLen))
 
-		willMessageLen, offset, err = ReadInt16(buf, offset)
+		willMessageLen, offset, err = utils.ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
-		willMessage, offset, err = ReadString(buf, offset, int(willMessageLen))
+		willMessage, offset, err = utils.ReadString(buf, offset, int(willMessageLen))
 
-		c.Will = &Message{
+		c.Will = &WillMessage{
 			QoS:       willQoS,
 			Retain:    willRetain,
 			Topic:     willTopic,
@@ -146,22 +148,22 @@ func (c *ConnPacket) Unpack(buf []byte) error {
 		}
 	}
 
-	loginLen, offset, err := ReadInt16(buf, offset)
+	loginLen, offset, err := utils.ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
 
-	c.Username, offset, err = ReadString(buf, offset, int(loginLen))
+	c.Username, offset, err = utils.ReadString(buf, offset, int(loginLen))
 	if err != nil {
 		return err
 	}
 
-	passLen, offset, err := ReadInt16(buf, offset)
+	passLen, offset, err := utils.ReadInt16(buf, offset)
 	if err != nil {
 		return err
 	}
 
-	c.Password, offset, err = ReadString(buf, offset, int(passLen))
+	c.Password, offset, err = utils.ReadString(buf, offset, int(passLen))
 	if err != nil {
 		return err
 	}
@@ -173,11 +175,11 @@ func (c *ConnPacket) Pack() []byte {
 	lenBuff := WriteLength(c.Length())
 	buf := make([]byte, 1+len(lenBuff)+c.Length())
 
-	offset := WriteInt8(buf, 0, byte(CONNECT)<<4)
-	offset = WriteBytes(buf, offset, lenBuff)
+	offset := utils.WriteInt8(buf, 0, byte(CONNECT)<<4)
+	offset = utils.WriteBytes(buf, offset, lenBuff)
 
-	offset = WriteString(buf, offset, c.VersionName)
-	offset = WriteInt8(buf, offset, c.Version)
+	offset = utils.WriteString(buf, offset, c.VersionName)
+	offset = utils.WriteInt8(buf, offset, c.Version)
 
 	var flag uint8
 	if len(c.Username) > 0 {
@@ -202,17 +204,17 @@ func (c *ConnPacket) Pack() []byte {
 		flag |= 0x2 // 00000010
 	}
 
-	offset = WriteInt8(buf, offset, flag)
-	offset = WriteInt16(buf, offset, c.KeepAlive)
-	offset = WriteString(buf, offset, c.ClientID)
+	offset = utils.WriteInt8(buf, offset, flag)
+	offset = utils.WriteInt16(buf, offset, c.KeepAlive)
+	offset = utils.WriteString(buf, offset, c.ClientID)
 
 	if c.Will != nil {
 		copy(buf[offset:], c.Will.Pack())
 		offset += c.Will.Length()
 	}
 
-	offset = WriteString(buf, offset, c.Username)
-	offset = WriteString(buf, offset, c.Password)
+	offset = utils.WriteString(buf, offset, c.Username)
+	offset = utils.WriteString(buf, offset, c.Password)
 
 	return buf
 }

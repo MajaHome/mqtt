@@ -2,6 +2,7 @@ package packet
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 )
 
 type SubscribePayload struct {
@@ -17,8 +18,8 @@ func (p *SubscribePayload) Length() int {
 
 func (p *SubscribePayload) Pack() []byte {
 	buf := make([]byte, p.Length())
-	offset := WriteString(buf, 0, p.Topic)
-	WriteInt8(buf, offset, uint8(p.QoS))
+	offset := utils.WriteString(buf, 0, p.Topic)
+	utils.WriteInt8(buf, offset, uint8(p.QoS))
 	return buf
 }
 
@@ -27,6 +28,7 @@ func (p *SubscribePayload) String() string {
 }
 
 type SubscribePacket struct {
+	PacketImpl
 	Header byte
 	Id     uint16
 	Topics []SubscribePayload
@@ -56,7 +58,7 @@ func (s *SubscribePacket) Length() int {
 }
 
 func (s *SubscribePacket) Unpack(buf []byte) error {
-	id, offset, err := ReadInt16(buf, 0)
+	id, offset, err := utils.ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
@@ -64,19 +66,19 @@ func (s *SubscribePacket) Unpack(buf []byte) error {
 
 	for left := len(buf) - 2; left > 0; {
 		var topicLen uint16
-		topicLen, offset, err = ReadInt16(buf, offset)
+		topicLen, offset, err = utils.ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
 
 		var topic string
-		topic, offset, err = ReadString(buf, offset, int(topicLen))
+		topic, offset, err = utils.ReadString(buf, offset, int(topicLen))
 		if err != nil {
 			return err
 		}
 
 		var qos uint8
-		qos, offset, err = ReadInt8(buf, offset)
+		qos, offset, err = utils.ReadInt8(buf, offset)
 
 		s.Topics = append(s.Topics, SubscribePayload{Topic: topic, QoS: QoS(qos)})
 		left -= offset
@@ -89,9 +91,9 @@ func (s *SubscribePacket) Pack() []byte {
 	lenBuff := WriteLength(s.Length())
 	buf := make([]byte, 1+len(lenBuff)+s.Length())
 
-	offset := WriteInt8(buf, 0, byte(SUBSCRIBE)<<4)
-	offset = WriteBytes(buf, offset, lenBuff)
-	offset = WriteInt16(buf, offset, s.Id)
+	offset := utils.WriteInt8(buf, 0, byte(SUBSCRIBE)<<4)
+	offset = utils.WriteBytes(buf, offset, lenBuff)
+	offset = utils.WriteInt16(buf, offset, s.Id)
 
 	for _, t := range s.Topics {
 		data := t.Pack()

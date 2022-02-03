@@ -3,7 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
-	"github.com/MajaSuite/mqtt/transport"
+	"github.com/MajaSuite/mqtt/packet"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 )
@@ -107,7 +107,7 @@ func DeleteRetain(topic string, qos int) error {
 	return nil
 }
 
-func FetchRetain() (map[string]transport.Event, error) {
+func FetchRetain() (map[string]*packet.WillMessage, error) {
 	query, err := db.Query(fetchRetain)
 	if err != nil {
 		log.Printf("error prepare fetch retain: %s", err)
@@ -115,24 +115,20 @@ func FetchRetain() (map[string]transport.Event, error) {
 	}
 	defer query.Close()
 
-	res := make(map[string]transport.Event)
+	res := make(map[string]*packet.WillMessage)
 
 	for query.Next() {
 		var topic, payload string
 		var qos int
+
 		if err := query.Scan(&topic, &payload, &qos); err != nil {
 			log.Printf("error fetch retain: %s", err)
 		}
-		res[topic] = transport.Event{
-			Topic:   transport.EventTopic{Name: topic, Qos: qos},
-			Payload: payload,
-			Qos:     qos,
-			Retain:  true,
-		}
+		res[topic] = &packet.WillMessage{Payload: payload, QoS: packet.QoS(qos)}
 	}
 
 	if query.Err() != nil {
-		return nil, ErrNotFound
+		return res, ErrNotFound // res will be initialized empty map
 	}
 
 	return res, nil

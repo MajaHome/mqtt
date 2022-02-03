@@ -2,9 +2,11 @@ package packet
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 )
 
 type PubRelPacket struct {
+	PacketImpl
 	Header byte
 	Id     uint16
 }
@@ -28,7 +30,7 @@ func (p *PubRelPacket) Length() int {
 }
 
 func (p *PubRelPacket) Unpack(buf []byte) error {
-	id, _, err := ReadInt16(buf, 0)
+	id, _, err := utils.ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
@@ -41,9 +43,9 @@ func (p *PubRelPacket) Pack() []byte {
 	offset := 0
 	buf := make([]byte, 4)
 
-	offset = WriteInt8(buf, offset, byte(PUBREL)<<4)
-	offset = WriteInt8(buf, offset, byte(p.Length()))
-	offset = WriteInt16(buf, offset, p.Id)
+	offset = utils.WriteInt8(buf, offset, byte(PUBREL)<<4)
+	offset = utils.WriteInt8(buf, offset, byte(p.Length()))
+	offset = utils.WriteInt16(buf, offset, p.Id)
 
 	return buf
 }

@@ -2,9 +2,11 @@ package packet
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 )
 
 type PublishPacket struct {
+	PacketImpl
 	Header  byte
 	Id      uint16
 	QoS     QoS
@@ -41,24 +43,24 @@ func (p *PublishPacket) Unpack(buf []byte) error {
 	p.Retain = p.Header&0x1 == 1
 	p.QoS = QoS(p.Header >> 1 & 0x3)
 
-	topicLen, offset, err := ReadInt16(buf, 0)
+	topicLen, offset, err := utils.ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
 
-	p.Topic, offset, err = ReadString(buf, offset, int(topicLen))
+	p.Topic, offset, err = utils.ReadString(buf, offset, int(topicLen))
 	if err != nil {
 		return err
 	}
 
 	if p.QoS > 0 {
-		p.Id, offset, err = ReadInt16(buf, offset)
+		p.Id, offset, err = utils.ReadInt16(buf, offset)
 		if err != nil {
 			return err
 		}
 	}
 
-	p.Payload, offset, err = ReadString(buf, offset, len(buf)-offset)
+	p.Payload, offset, err = utils.ReadString(buf, offset, len(buf)-offset)
 	if err != nil {
 		return err
 	}
@@ -86,12 +88,12 @@ func (p *PublishPacket) Pack() []byte {
 	if p.QoS == QoS(2) {
 		packetType |= 0x4
 	}
-	offset := WriteInt8(buf, 0, packetType)
-	offset = WriteBytes(buf, offset, lenBuff)
+	offset := utils.WriteInt8(buf, 0, packetType)
+	offset = utils.WriteBytes(buf, offset, lenBuff)
 
-	offset = WriteString(buf, offset, p.Topic)
+	offset = utils.WriteString(buf, offset, p.Topic)
 	if p.QoS > 0 {
-		offset = WriteInt16(buf, offset, p.Id)
+		offset = utils.WriteInt16(buf, offset, p.Id)
 	}
 	copy(buf[offset:], p.Payload)
 

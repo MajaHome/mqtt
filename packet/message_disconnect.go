@@ -1,6 +1,7 @@
 package packet
 
 type DisconnectPacket struct {
+	PacketImpl
 	Header byte
 }
 

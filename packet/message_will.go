@@ -2,9 +2,10 @@ package packet
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 )
 
-type Message struct {
+type WillMessage struct {
 	Flag      bool
 	QoS       QoS
 	Retain    bool
@@ -13,29 +14,29 @@ type Message struct {
 	Payload   string
 }
 
-func (m *Message) Type() Type {
+func (m *WillMessage) Type() Type {
 	return RESERVED
 }
 
-func (m *Message) Length() int {
+func (m *WillMessage) Length() int {
 	return len(m.Topic) + 2 /*topicLen*/ + len(m.Payload) + 2 /*payload len*/
 }
 
-func (m *Message) Unpack(buf []byte) error {
+func (m *WillMessage) Unpack(buf []byte) error {
 	return nil
 }
 
-func (m *Message) Pack() []byte {
+func (m *WillMessage) Pack() []byte {
 	lenBuff := WriteLength(m.Length())
 	buf := make([]byte, 1+len(lenBuff)+m.Length())
 
-	offset := WriteString(buf, 0, m.Topic)
-	offset = WriteString(buf, offset, m.Payload)
+	offset := utils.WriteString(buf, 0, m.Topic)
+	offset = utils.WriteString(buf, offset, m.Payload)
 
 	return buf
 }
 
-func (m *Message) String() string {
+func (m *WillMessage) String() string {
 	return fmt.Sprintf(`{"topic":"%s","qos":%d,"retain":"%v","dup":"%v","flag":"%v","payload":"%s"}`,
 		m.Topic, m.QoS.Int(), m.Retain, m.Dublicate, m.Flag, m.Payload)
 }

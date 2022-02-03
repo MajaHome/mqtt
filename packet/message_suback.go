@@ -3,9 +3,11 @@ package packet
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/MajaSuite/mqtt/utils"
 )
 
 type SubAckPacket struct {
+	PacketImpl
 	Header      byte
 	Id          uint16
 	ReturnCodes []QoS
@@ -31,7 +33,7 @@ func (sack *SubAckPacket) Length() int {
 }
 
 func (sack *SubAckPacket) Unpack(buf []byte) error {
-	id, offset, err := ReadInt16(buf, 0)
+	id, offset, err := utils.ReadInt16(buf, 0)
 	if err != nil {
 		return err
 	}
@@ -39,7 +41,7 @@ func (sack *SubAckPacket) Unpack(buf []byte) error {
 
 	for left := len(buf) - 2; left > 0; left-- {
 		var qos byte
-		qos, offset, err = ReadInt8(buf, offset)
+		qos, offset, err = utils.ReadInt8(buf, offset)
 		sack.ReturnCodes = append(sack.ReturnCodes, QoS(qos))
 	}
 

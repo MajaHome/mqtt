@@ -1,15 +1,15 @@
 package broker
 
 import (
-	"github.com/MajaSuite/mqtt/db"
-	"github.com/MajaSuite/mqtt/packet"
-	"github.com/MajaSuite/mqtt/transport"
 	"log"
 	"net"
+
+	"github.com/MajaSuite/mqtt/db"
+	"github.com/MajaSuite/mqtt/packet"
 )
 
-func (e *Mqtt) processConnect(conn net.Conn) {
-	pkt, err := packet.ReadPacket(conn, e.debug)
+func (b *Broker) processConnect(conn net.Conn) {
+	pkt, err := packet.ReadPacket(conn, b.debug)
 	if err != nil {
 		log.Println("error read packet", err)
 		conn.Close()
@@ -49,7 +49,7 @@ func (e *Mqtt) processConnect(conn net.Conn) {
 				connPacket.ClientID = connPacket.Username
 			}
 		}
-		err = packet.WritePacket(conn, res, e.debug)
+		err = packet.WritePacket(conn, res, b.debug)
 		if err != nil {
 			log.Println("error send response packet", err)
 			conn.Close()
@@ -63,37 +63,47 @@ func (e *Mqtt) processConnect(conn net.Conn) {
 			return
 		}
 
-		client := NewClient(e.debug, connPacket.ClientID, conn, res.Session, e.brokerChannel)
-		if e.clients[client.clientId] != nil {
-			log.Println("override")
-			// override connection. onlu one connection with user/pass allowed
-			e.clients[client.clientId].conn.Close()
-			e.clients[client.clientId].conn = conn
-		} else {
-			// restore subscription
-			if res.Session {
+		if res.Session {
+			if b.clients[connPacket.ClientID] != nil {
+				// session already exists in the broker memory
+				b.clients[connPacket.ClientID].conn.Close()
+				b.clients[connPacket.ClientID].conn = conn
+			} else {
+				// the new one
+				b.clients[connPacket.ClientID] = NewClient(conn, connPacket.ClientID, res.Session, b.channel, b.debug)
+
+				// and restore subscription
 				if subs, err := db.FetchSubcription(connPacket.ClientID); err == nil {
+					subPayload := []packet.SubscribePayload{}
 					for topic, qos := range subs {
-						client.messageId++
-						e.brokerChannel <- transport.Event{
-							PacketType: packet.SUBSCRIBE,
-							MessageId:  client.messageId,
-							ClientId:   connPacket.ClientID,
-							Topic:      transport.EventTopic{Name: topic, Qos: qos},
-							Restore:    true,
-						}
+						subPayload = append(subPayload, packet.SubscribePayload{Topic: topic, QoS: packet.QoS(qos)})
 					}
+					b.clients[connPacket.ClientID].messageId++
+
+					subpkt := packet.NewSubscribe()
+					subpkt.ClientId = connPacket.ClientId
+					subpkt.Id = b.clients[connPacket.ClientID].messageId
+					subpkt.Topics = subPayload
+					b.channel <- subpkt
 				}
 			}
-			e.clients[client.clientId] = client
+		} else {
+			// remove all (if we have)
+			if b.clients[connPacket.ClientID] != nil {
+				b.clients[connPacket.ClientID].conn.Close()
+				delete(b.clients, connPacket.ClientID)
+			}
+
+			// and create new one
+			b.clients[connPacket.ClientID] = NewClient(conn, connPacket.ClientID, res.Session, b.channel, b.debug)
 		}
 
 		if connPacket.Will != nil {
-			client.will = connPacket.Will
+			b.clients[connPacket.ClientID].will = connPacket.Will
 		}
 
 		// start manage client
-		go client.Start()
+		go b.clients[connPacket.ClientID].Start()
 	} else {
 		log.Println("error: wrong packet. expect CONNECT")
 		conn.Close()

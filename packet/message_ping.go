@@ -1,6 +1,7 @@
 package packet
 
 type PingPacket struct {
+	PacketImpl
 	Header byte
 }
 

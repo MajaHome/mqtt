@@ -1,6 +1,7 @@
 package packet
 
 type PongPacket struct {
+	PacketImpl
 	Header byte
 }
 

@@ -7,198 +7,143 @@ import (
 	"strings"
 
 	"github.com/MajaSuite/mqtt/packet"
-	"github.com/MajaSuite/mqtt/transport"
 )
 
 type Client struct {
 	debug        bool
 	conn         net.Conn
 	messageId    uint16
-	toEngine     chan transport.Event
-	toSendOut    chan transport.Event
 	clientId     string
-	session      bool                   // clean or persisted session
-	subscription []transport.EventTopic // subscribed topics
-	will         *packet.Message
-	stop         bool // flag to stop
-	started      bool
+	session      bool                      // persisted session (true) or clean (false)
+	subscription []packet.SubscribePayload // subscribed topics
+	ack          map[string]packet.Packet
+	will         *packet.WillMessage
+	channel      chan packet.Packet // channel to send message to client over connection
+	broker       chan packet.Packet // channel to send message to broker
 }
 
-func NewClient(debug bool, id string, conn net.Conn, session bool, channel chan transport.Event) *Client {
+func NewClient(conn net.Conn, id string, session bool, broker chan packet.Packet, debug bool) *Client {
 	return &Client{
-		debug:     debug,
-		conn:      conn,
-		messageId: 1,
-		toEngine:  channel,
-		toSendOut: make(chan transport.Event),
-		clientId:  id,
-		session:   session,
-		started:   false,
+		debug:        debug,
+		conn:         conn,
+		messageId:    1,
+		clientId:     id,
+		session:      session,
+		subscription: []packet.SubscribePayload{},
+		ack:          make(map[string]packet.Packet),
+		channel:      make(chan packet.Packet),
+		broker:       broker,
 	}
 }
 
 func (c *Client) Start() {
-	if c.started {
-		return
-	}
-	c.stop = false
-	c.started = true
-
-	var pkt packet.Packet
 	var err error
+	var quit = make(chan bool)
+
 	for {
-		if c.stop {
-			log.Printf("client %s disconnected\n", c.clientId)
-			return
-		}
-
 		// send messages to client
-		go func() {
-			for event := range c.toSendOut {
-				if c.debug {
-					log.Println("message to send to client", event)
-				}
-
-				var res packet.Packet
-
-				switch event.PacketType {
-				case packet.PUBLISH:
-					publish := packet.NewPublish()
-					publish.Id = event.MessageId
-					publish.Topic = event.Topic.Name
-					publish.QoS = packet.QoS(event.Qos)
-					publish.Payload = event.Payload
-					publish.Retain = event.Retain
-					publish.DUP = event.Dublicate
-					res = publish
-				case packet.PUBACK:
-					ack := packet.NewPubAck()
-					ack.Id = event.MessageId
-					res = ack
-				case packet.PUBREC:
-					rec := packet.NewPubRec()
-					rec.Id = event.MessageId
-					res = rec
-				case packet.PUBCOMP:
-					comp := packet.NewPubComp()
-					comp.Id = event.MessageId
-					res = comp
-				default:
-					log.Println("wrong packet from engine")
-					continue
-				}
-
-				if err := packet.WritePacket(c.conn, res, c.debug); err != nil {
-					c.toEngine <- transport.Event{ClientId: c.clientId}
-					log.Println("client disconnect while write to socket", err)
-					c.Stop()
+		go func(quit chan bool) {
+			for {
+				select {
+				case <-quit:
+					c.conn.Close()
 					return
+				case pkt := <-c.channel:
+					if c.debug {
+						log.Printf("%s message to send %s", c.clientId, pkt)
+					}
+
+					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
+						c.broker <- &packet.PacketImpl{ClientId: c.clientId} // send to toEngine unexpected disconnect
+						log.Printf("%s disconnect while write to socket %s", c.clientId, err)
+						c.Stop()
+						return
+					}
 				}
 			}
-		}()
+		}(quit)
 
+		var pkt packet.Packet
 		if pkt, err = packet.ReadPacket(c.conn, c.debug); err != nil {
-			log.Println("err read packet, disconnected: ", err.Error())
-			c.Stop()
-
-			// send to toEngine unexpected disconnect
-			c.toEngine <- transport.Event{ClientId: c.clientId}
+			c.broker <- &packet.PacketImpl{ClientId: c.clientId} // send to toEngine unexpected disconnect
+			log.Printf("%s error read packet, disconnected: %s", c.clientId, err)
+			quit <- true
 			return
 		}
+
+		pkt.SetSource(c.clientId)
 
 		switch pkt.Type() {
 		case packet.DISCONNECT:
-			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type()}
-			err = packet.WritePacket(c.conn, packet.NewDisconnect(), c.debug)
-			c.Stop()
+			c.broker <- pkt
+			quit <- true
 			return
 		case packet.PING:
-			err = packet.WritePacket(c.conn, packet.NewPong(), c.debug)
+			c.channel <- packet.NewPong()
 		case packet.SUBSCRIBE:
-			var qos []packet.QoS
-			req := pkt.(*packet.SubscribePacket)
-
-			for _, topic := range req.Topics {
-				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
-				qos = append(qos, c.addSubscription(t))
-				c.toEngine <- transport.Event{MessageId: req.Id, ClientId: c.clientId, PacketType: pkt.Type(), Topic: t}
-			}
-
 			res := packet.NewSubAck()
-			res.Id = req.Id
-			res.ReturnCodes = qos
-			err = packet.WritePacket(c.conn, res, c.debug)
+			res.Id = pkt.(*packet.SubscribePacket).Id
+			for _, payload := range pkt.(*packet.SubscribePacket).Topics {
+				res.ReturnCodes = append(res.ReturnCodes, c.addSubscription(payload))
+			}
+			c.broker <- pkt
+			c.channel <- res
 		case packet.UNSUBSCRIBE:
-			req := pkt.(*packet.UnSubscribePacket)
 			res := packet.NewUnSubAck()
-			res.Id = req.Id
-
-			for _, topic := range req.Topics {
-				t := transport.EventTopic{Name: strings.Trim(topic.Topic, "/"), Qos: topic.QoS.Int()}
-				c.removeSubscription(t)
-				err = packet.WritePacket(c.conn, res, c.debug)
+			res.Id = pkt.(*packet.UnSubscribePacket).Id
+			for _, topic := range pkt.(*packet.UnSubscribePacket).Topics {
+				if c.removeSubscription(topic) {
+					c.channel <- res
+				}
 			}
 		case packet.PUBLISH:
-			req := pkt.(*packet.PublishPacket)
-			c.toEngine <- transport.Event{
-				ClientId:   c.clientId,
-				PacketType: pkt.Type(),
-				MessageId:  req.Id,
-				Topic:      transport.EventTopic{Name: strings.Trim(req.Topic, "/")},
-				Payload:    req.Payload,
-				Qos:        req.QoS.Int(),
-				Retain:     req.Retain,
-				Dublicate:  req.DUP,
-			}
+			c.broker <- pkt
 		case packet.PUBREC:
-			req := pkt.(*packet.PubRecPacket)
-			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.broker <- pkt
 		case packet.PUBREL:
-			req := pkt.(*packet.PubRelPacket)
-			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.broker <- pkt
 		case packet.PUBACK:
-			req := pkt.(*packet.PubAckPacket)
-			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.broker <- pkt
 		case packet.PUBCOMP:
-			req := pkt.(*packet.PubCompPacket)
-			c.toEngine <- transport.Event{ClientId: c.clientId, PacketType: pkt.Type(), MessageId: req.Id}
+			c.broker <- pkt
 		default:
 			err = packet.ErrUnknownPacket
 		}
+
 		if err != nil {
-			log.Println("unable to manage request, disconnect.", err)
-			c.Stop()
-			c.toEngine <- transport.Event{ClientId: c.clientId}
+			log.Printf("%s unable to manage request, disconnect (%s)", c.clientId, err)
+			c.broker <- &packet.PacketImpl{ClientId: c.clientId} // send to toEngine unexpected disconnect
+			quit <- true
 			return
 		}
 	}
 }
 
 func (c *Client) Stop() {
-	c.stop = true
 	c.conn.Close()
 }
 
-func (c *Client) addSubscription(t transport.EventTopic) packet.QoS {
+func (c *Client) addSubscription(t packet.SubscribePayload) packet.QoS {
 	// check for duplicate
 	for _, v := range c.subscription {
-		if v.Name == t.Name {
-			if v.Qos != t.Qos {
-				v.Qos = t.Qos
+		if v.Topic == t.Topic {
+			if v.QoS != t.QoS {
+				v.QoS = t.QoS
 			}
-			return packet.QoS(v.Qos)
+			return t.QoS
 		}
 	}
 	c.subscription = append(c.subscription, t)
-	return packet.QoS(t.Qos)
+	return t.QoS
 }
 
-func (c *Client) removeSubscription(t transport.EventTopic) bool {
+func (c *Client) removeSubscription(t packet.SubscribePayload) bool {
 	if len(c.subscription) == 0 {
 		return false
 	}
+
 	for i, v := range c.subscription {
-		if v.Name == t.Name {
+		if v.Topic == t.Topic && v.QoS == t.QoS {
 			if len(c.subscription) > i+1 {
 				c.subscription[i] = c.subscription[len(c.subscription)-1]
 			}
@@ -210,6 +155,10 @@ func (c *Client) removeSubscription(t transport.EventTopic) bool {
 }
 
 func (c *Client) Contains(topic string) bool {
+	if len(c.subscription) == 0 {
+		return false
+	}
+
 	t := strings.Split(topic, "/")
 
 	// searched topic is empty
@@ -219,7 +168,7 @@ func (c *Client) Contains(topic string) bool {
 
 	for _, subs := range c.subscription {
 		var i int = 0 // start from first level
-		s := strings.Split(subs.Name, "/")
+		s := strings.Split(subs.Topic, "/")
 
 		var found bool
 		for {

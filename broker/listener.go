@@ -10,35 +10,48 @@ type Server struct {
 	debug    bool
 }
 
-/* TODO manage ssl and websocket connections
- */
-func NewListener(debug bool) *Server {
+func NewServer(debug bool) *Server {
 	l, err := net.Listen("tcp", "0.0.0.0:1883")
 	if err != nil {
 		return nil
 	}
 
 	log.Println("listen on address", l.Addr())
+
 	return &Server{listener: l, debug: debug}
 }
 
-func (m *Server) Accept() (net.Conn, error) {
-	conn, err := m.listener.Accept()
+func (s *Server) Manage(broker *Broker) {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			log.Println("error accept connection", err)
+			conn.Close()
+			continue
+		}
+
+		go broker.processConnect(conn)
+	}
+}
+
+func (s *Server) Accept() (net.Conn, error) {
+	conn, err := s.listener.Accept()
 	if err != nil {
 		return nil, err
 	}
 
-	if m.debug {
+	if s.debug {
 		log.Println("accept new connection from", conn.RemoteAddr())
 	}
+
 	return conn, nil
 }
 
-func (m *Server) Close() error {
+func (s *Server) Close() error {
 	log.Println("close listener")
-	return m.listener.Close()
+	return s.listener.Close()
 }
 
-func (m *Server) Addr() net.Addr {
-	return m.listener.Addr()
+func (s *Server) Addr() net.Addr {
+	return s.listener.Addr()
 }
