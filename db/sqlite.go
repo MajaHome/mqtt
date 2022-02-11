@@ -107,7 +107,7 @@ func DeleteRetain(topic string, qos int) error {
 	return nil
 }
 
-func FetchRetain() (map[string]*packet.WillMessage, error) {
+func FetchRetain() ([]*packet.PublishPacket, error) {
 	query, err := db.Query(fetchRetain)
 	if err != nil {
 		log.Printf("error prepare fetch retain: %s", err)
@@ -115,7 +115,7 @@ func FetchRetain() (map[string]*packet.WillMessage, error) {
 	}
 	defer query.Close()
 
-	res := make(map[string]*packet.WillMessage)
+	res := []*packet.PublishPacket{}
 
 	for query.Next() {
 		var topic, payload string
@@ -124,11 +124,17 @@ func FetchRetain() (map[string]*packet.WillMessage, error) {
 		if err := query.Scan(&topic, &payload, &qos); err != nil {
 			log.Printf("error fetch retain: %s", err)
 		}
-		res[topic] = &packet.WillMessage{Payload: payload, QoS: packet.QoS(qos)}
+
+		publish := packet.NewPublish()
+		publish.Retain = true
+		publish.Topic = topic
+		publish.QoS = packet.QoS(qos)
+		publish.Payload = payload
+		res = append(res, publish)
 	}
 
 	if query.Err() != nil {
-		return res, ErrNotFound // res will be initialized empty map
+		return nil, ErrNotFound
 	}
 
 	return res, nil

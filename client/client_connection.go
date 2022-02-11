@@ -59,6 +59,9 @@ func (cc *ClientConnection) connect() error {
 
 	pkt, err := packet.ReadPacket(conn, cc.debug)
 	if err != nil {
+		if cc.debug {
+			log.Println("error read packet", err)
+		}
 		cc.conn.Close()
 		return err
 	}
@@ -135,6 +138,9 @@ func (cc *ClientConnection) manage() {
 	for {
 		pkt, err := packet.ReadPacket(cc.conn, cc.debug)
 		if err != nil {
+			if cc.debug {
+				log.Println("error read packet", err)
+			}
 			time.Sleep(time.Second)
 			continue
 		}

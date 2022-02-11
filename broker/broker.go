@@ -29,10 +29,10 @@ func NewBroker(debug bool) *Broker {
 }
 
 // send to all subscribed clients
-func (e *Broker) publishMessage(pkt *packet.PublishPacket) {
-	for _, client := range e.clients {
+func (b *Broker) publishMessage(pkt *packet.PublishPacket) {
+	for _, client := range b.clients {
 		if client != nil && client.conn != nil {
-			if client.Contains(pkt.Topic) {
+			if client.Contains(pkt.Topic, 0) {
 				client.messageId++
 				pkt.Id = client.messageId
 				client.channel <- pkt
@@ -46,7 +46,7 @@ func (e *Broker) publishMessage(pkt *packet.PublishPacket) {
 }
 
 // send will message (on client disconnect)
-func (e *Broker) sendWill(client *Client) {
+func (b *Broker) sendWill(client *Client) {
 	if client != nil {
 		if client.will != nil {
 			publish := packet.NewPublish()
@@ -56,7 +56,7 @@ func (e *Broker) sendWill(client *Client) {
 			publish.QoS = client.will.QoS
 			//client.will.Retain
 
-			for _, c := range e.clients {
+			for _, c := range b.clients {
 				if c != nil && c.conn != nil {
 					client.channel <- publish
 				}
@@ -65,47 +65,53 @@ func (e *Broker) sendWill(client *Client) {
 	}
 }
 
-func (e *Broker) rescan() {
+func (b *Broker) rescan() {
 	for {
 		time.Sleep(time.Second * 10)
 
-		if e.debug {
+		if b.debug {
 			//log.Println("rescan queue for ack")
 		}
 
-		//for id, event := range e.sent {
+		//for id, event := range b.sent {
 		//	// TODO try to send messages without ack again
 		//}
 	}
 }
 
-func (e *Broker) broker() {
-	for pkt := range e.channel {
-		if e.debug {
+func (b *Broker) broker() {
+	for pkt := range b.channel {
+		if b.debug {
 			log.Printf("broker receive message %s from %s", pkt, pkt.Source())
 		}
-		client := e.clients[pkt.Source()]
+		client := b.clients[pkt.Source()]
 
 		switch pkt.Type() {
+		case packet.PING:
+			client.channel <- packet.NewPong()
 		case packet.DISCONNECT:
-			e.sendWill(client)
+			b.sendWill(client)
 			if !client.session {
-				delete(e.clients, pkt.Source())
+				delete(b.clients, pkt.Source())
 			}
+			client.Stop()
 		case packet.SUBSCRIBE:
-			retains, _ := db.FetchRetain()
+			retains, err := db.FetchRetain()
+
+			res := packet.NewSubAck()
+			res.Id = pkt.(*packet.SubscribePacket).Id
+
 			for _, payload := range pkt.(*packet.SubscribePacket).Topics {
-				client.addSubscription(payload)
-				if retains[payload.Topic] != nil {
-					// have retain message for this client and current topic. push it to client
-					client.messageId++
-					publish := packet.NewPublish()
-					publish.Id = client.messageId
-					publish.Retain = true
-					publish.Topic = payload.Topic
-					publish.QoS = retains[payload.Topic].QoS
-					publish.Payload = retains[payload.Topic].Payload
-					client.channel <- publish
+				res.ReturnCodes = append(res.ReturnCodes, client.addSubscription(payload))
+
+				if err == nil {
+					for _, m := range retains {
+						if client.Contains(m.Topic, m.QoS) {
+							client.messageId++
+							m.Id = client.messageId
+							client.channel <- m
+						}
+					}
 				}
 
 				// if not clean session - save subscription
@@ -113,10 +119,15 @@ func (e *Broker) broker() {
 					db.SaveSubscription(pkt.Source(), payload.Topic, payload.QoS.Int())
 				}
 			}
+
+			client.channel <- res
 		case packet.UNSUBSCRIBE:
-			if e.clients[pkt.Source()].session {
-				for _, payload := range pkt.(*packet.UnSubscribePacket).Topics {
-					db.DeleteSubscription(pkt.Source(), payload.Topic)
+			res := packet.NewUnSubAck()
+			res.Id = pkt.(*packet.UnSubscribePacket).Id
+			client.channel <- res
+			for _, subscribePayload := range pkt.(*packet.UnSubscribePacket).Topics {
+				if client.removeSubscription(subscribePayload) && b.clients[pkt.Source()].session {
+					db.DeleteSubscription(pkt.Source(), subscribePayload.Topic)
 				}
 			}
 		case packet.PUBLISH:
@@ -137,12 +148,12 @@ func (e *Broker) broker() {
 			} else {
 				switch pkt.(*packet.PublishPacket).QoS {
 				case packet.AtMostOnce:
-					e.publishMessage(pkt.(*packet.PublishPacket))
+					b.publishMessage(pkt.(*packet.PublishPacket))
 				case packet.AtLeastOnce:
 					puback := packet.NewPubAck()
 					puback.Id = pkt.(*packet.PublishPacket).Id
 					client.channel <- puback
-					e.publishMessage(pkt.(*packet.PublishPacket))
+					b.publishMessage(pkt.(*packet.PublishPacket))
 				case packet.ExactlyOnce:
 					pubrec := packet.NewPubRec()
 					pubrec.Id = pkt.(*packet.PublishPacket).Id
@@ -181,7 +192,7 @@ func (e *Broker) broker() {
 				delete(client.ack, fmt.Sprintf("r%d", pkt.(*packet.PubRelPacket).Id))
 				log.Printf("%s confirmed", p)
 
-				e.publishMessage(p.(*packet.PublishPacket))
+				b.publishMessage(p.(*packet.PublishPacket))
 
 				pubcomp := packet.NewPubComp()
 				pubcomp.Id = pkt.(*packet.PubRelPacket).Id
@@ -200,9 +211,9 @@ func (e *Broker) broker() {
 			if p != nil {
 				delete(client.ack, fmt.Sprintf("l%d", pkt.(*packet.PubCompPacket).Id))
 
-				for _, oc := range e.clients {
+				for _, oc := range b.clients {
 					if oc != nil && oc.conn != nil && oc.clientId != client.clientId {
-						if oc.Contains(p.(*packet.PublishPacket).Topic) {
+						if oc.Contains(p.(*packet.PublishPacket).Topic, 0) {
 							oc.messageId++
 							p.(*packet.PublishPacket).Id = oc.messageId
 							oc.channel <- p
@@ -214,13 +225,12 @@ func (e *Broker) broker() {
 				log.Printf("packet to comp %d from %s not found", pkt.(*packet.PubCompPacket).Id, pkt.Source())
 			}
 		default:
-			log.Println("engine unexpected disconnect")
-			if client != nil {
-				e.sendWill(client)
-				if !client.session {
-					delete(e.clients, pkt.Source())
-				}
+			log.Println("client unexpectedly disconnected")
+			b.sendWill(client)
+			if !client.session {
+				delete(b.clients, pkt.Source())
 			}
+			client.Stop()
 		}
 	}
 }

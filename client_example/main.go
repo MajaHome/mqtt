@@ -15,7 +15,7 @@ var (
 
 func main() {
 	flag.Parse()
-	cc, err := client.Connect("127.0.0.1:1883", "go-mqttclient", 2, false, "", "", *debug)
+	cc, err := client.Connect("127.0.0.1:1883", "go-mqttclient", 30, false, "", "", *debug)
 	if err != nil {
 		panic("can't connect to mqtt server")
 	}
@@ -25,8 +25,6 @@ func main() {
 			log.Println("NEW PACKET FROM SERVER: ", pkt)
 		}
 	}()
-
-	cc.Send <- packet.NewPing()
 
 	s := packet.NewSubscribe()
 	s.Id = 123
@@ -55,12 +53,12 @@ func main() {
 	log.Println("send", u)
 	cc.Send <- u
 
-	for i := 2; ; i++ {
+	for i := 2; i < 50; i++ {
 		pp := packet.NewPublish()
 		pp.Id = uint16(i)
 		pp.Topic = "home/topic"
 		pp.Payload = "{\"message\":\"" + strconv.Itoa(i) + "\"}"
-		pp.QoS = 2
+		pp.QoS = 1
 		log.Println("send", pp)
 		cc.Send <- pp
 		time.Sleep(time.Second * 2)

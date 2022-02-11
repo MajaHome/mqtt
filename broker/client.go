@@ -2,11 +2,10 @@ package broker
 
 import (
 	"fmt"
+	"github.com/MajaSuite/mqtt/packet"
 	"log"
 	"net"
 	"strings"
-
-	"github.com/MajaSuite/mqtt/packet"
 )
 
 type Client struct {
@@ -37,94 +36,45 @@ func NewClient(conn net.Conn, id string, session bool, broker chan packet.Packet
 }
 
 func (c *Client) Start() {
-	var err error
-	var quit = make(chan bool)
+	go func() {
+		for {
+			if pkt, err := packet.ReadPacket(c.conn, c.debug); err != nil || pkt == nil {
+				c.broker <- &packet.PacketImpl{ClientId: c.clientId}
+				log.Printf("%s error read packet, disconnected: %s", c.clientId, err)
+				return
+			} else {
+				pkt.SetSource(c.clientId)
+				c.broker <- pkt
 
-	for {
-		// send messages to client
-		go func(quit chan bool) {
-			for {
-				select {
-				case <-quit:
-					c.conn.Close()
+				if pkt.Type() == packet.DISCONNECT {
 					return
-				case pkt := <-c.channel:
-					if c.debug {
-						log.Printf("%s message to send %s", c.clientId, pkt)
-					}
-
-					if err := packet.WritePacket(c.conn, pkt, c.debug); err != nil {
-						c.broker <- &packet.PacketImpl{ClientId: c.clientId} // send to toEngine unexpected disconnect
-						log.Printf("%s disconnect while write to socket %s", c.clientId, err)
-						c.Stop()
-						return
-					}
 				}
 			}
-		}(quit)
+		}
+	}()
 
-		var pkt packet.Packet
-		if pkt, err = packet.ReadPacket(c.conn, c.debug); err != nil {
+	for p := range c.channel {
+		if c.debug {
+			log.Printf("%s message to send %s", c.clientId, p)
+		}
+
+		if err := packet.WritePacket(c.conn, p, c.debug); err != nil {
 			c.broker <- &packet.PacketImpl{ClientId: c.clientId} // send to toEngine unexpected disconnect
-			log.Printf("%s error read packet, disconnected: %s", c.clientId, err)
-			quit <- true
+			log.Printf("%s disconnect while write to socket %s", c.clientId, err)
 			return
 		}
-
-		pkt.SetSource(c.clientId)
-
-		switch pkt.Type() {
-		case packet.DISCONNECT:
-			c.broker <- pkt
-			quit <- true
-			return
-		case packet.PING:
-			c.channel <- packet.NewPong()
-		case packet.SUBSCRIBE:
-			res := packet.NewSubAck()
-			res.Id = pkt.(*packet.SubscribePacket).Id
-			for _, payload := range pkt.(*packet.SubscribePacket).Topics {
-				res.ReturnCodes = append(res.ReturnCodes, c.addSubscription(payload))
-			}
-			c.broker <- pkt
-			c.channel <- res
-		case packet.UNSUBSCRIBE:
-			res := packet.NewUnSubAck()
-			res.Id = pkt.(*packet.UnSubscribePacket).Id
-			for _, topic := range pkt.(*packet.UnSubscribePacket).Topics {
-				if c.removeSubscription(topic) {
-					c.channel <- res
-				}
-			}
-		case packet.PUBLISH:
-			c.broker <- pkt
-		case packet.PUBREC:
-			c.broker <- pkt
-		case packet.PUBREL:
-			c.broker <- pkt
-		case packet.PUBACK:
-			c.broker <- pkt
-		case packet.PUBCOMP:
-			c.broker <- pkt
-		default:
-			err = packet.ErrUnknownPacket
-		}
-
-		if err != nil {
-			log.Printf("%s unable to manage request, disconnect (%s)", c.clientId, err)
-			c.broker <- &packet.PacketImpl{ClientId: c.clientId} // send to toEngine unexpected disconnect
-			quit <- true
-			return
-		}
+	}
+	if c.debug {
+		log.Printf("client %s stopped", c.clientId)
 	}
 }
 
 func (c *Client) Stop() {
+	close(c.channel)
 	c.conn.Close()
 }
 
 func (c *Client) addSubscription(t packet.SubscribePayload) packet.QoS {
-	// check for duplicate
 	for _, v := range c.subscription {
 		if v.Topic == t.Topic {
 			if v.QoS != t.QoS {
@@ -154,7 +104,7 @@ func (c *Client) removeSubscription(t packet.SubscribePayload) bool {
 	return false
 }
 
-func (c *Client) Contains(topic string) bool {
+func (c *Client) Contains(topic string, qos packet.QoS) bool {
 	if len(c.subscription) == 0 {
 		return false
 	}
@@ -177,7 +127,7 @@ func (c *Client) Contains(topic string) bool {
 			}
 
 			// subscribed to any topic
-			if s[i] == "#" {
+			if s[i] == "#" && subs.QoS == qos {
 				found = true
 				break
 			}
@@ -185,7 +135,7 @@ func (c *Client) Contains(topic string) bool {
 			// match at this level
 			if s[i] == "*" || s[i] == t[i] {
 				if len(t) == i+1 {
-					if len(t) == len(s) {
+					if len(t) == len(s) && subs.QoS == qos {
 						found = true
 						break
 					}

@@ -224,6 +224,6 @@ func (c *ConnPacket) String() string {
 	if c.Will != nil {
 		will = ", will: " + c.Will.String()
 	}
-	return fmt.Sprintf("connect: {var: %d, keepalive: %d, clientid: %s%s, login: %s, pass: %s}", c.Version,
-		c.KeepAlive, c.ClientID, will, c.Username, c.Password)
+	return fmt.Sprintf("connect: {ver: %d, keepalive: %d, clean: %v, clientid: %s%s, login: %s, pass: %s}", c.Version,
+		c.KeepAlive, c.CleanSession, c.ClientID, will, c.Username, c.Password)
 }

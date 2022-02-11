@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 const (
@@ -203,6 +204,7 @@ func WritePacket(conn net.Conn, pkt Packet, debug bool) error {
 		log.Printf("write:\n%s", hex.Dump(packed))
 	}
 
+	conn.SetWriteDeadline(time.Now().Add(time.Second * 3))
 	_, err := conn.Write(packed)
 
 	return err
