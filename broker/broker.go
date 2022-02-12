@@ -226,11 +226,13 @@ func (b *Broker) broker() {
 			}
 		default:
 			log.Println("client unexpectedly disconnected")
-			b.sendWill(client)
-			if !client.session {
-				delete(b.clients, pkt.Source())
+			if client != nil {
+				b.sendWill(client)
+				if !client.session {
+					delete(b.clients, pkt.Source())
+				}
+				client.Stop()
 			}
-			client.Stop()
 		}
 	}
 }
