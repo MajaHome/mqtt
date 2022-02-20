@@ -32,9 +32,10 @@ func NewBroker(debug bool) *Broker {
 func (b *Broker) publishMessage(pkt *packet.PublishPacket) {
 	for _, client := range b.clients {
 		if client != nil && client.conn != nil {
-			if client.Contains(pkt.Topic, 0) {
+			if qos := client.Contains(pkt.Topic); qos != packet.QoS(0x80) {
 				client.messageId++
 				pkt.Id = client.messageId
+				pkt.QoS = qos
 				client.channel <- pkt
 
 				if pkt.QoS > 0 {
@@ -69,13 +70,13 @@ func (b *Broker) rescan() {
 	for {
 		time.Sleep(time.Second * 10)
 
-		if b.debug {
-			//log.Println("rescan queue for ack")
+		for clientId, client := range b.clients {
+			log.Printf("rescan %s queue", clientId)
+			for id, a := range client.ack {
+				log.Printf("%s: %s -> %v", clientId, id, a)
+				// todo
+			}
 		}
-
-		//for id, event := range b.sent {
-		//	// TODO try to send messages without ack again
-		//}
 	}
 }
 
@@ -106,9 +107,10 @@ func (b *Broker) broker() {
 
 				if err == nil {
 					for _, m := range retains {
-						if client.Contains(m.Topic, m.QoS) {
+						if qos := client.Contains(m.Topic); qos != packet.QoS(0x80) {
 							client.messageId++
 							m.Id = client.messageId
+							m.QoS = qos
 							client.channel <- m
 						}
 					}
@@ -213,9 +215,10 @@ func (b *Broker) broker() {
 
 				for _, oc := range b.clients {
 					if oc != nil && oc.conn != nil && oc.clientId != client.clientId {
-						if oc.Contains(p.(*packet.PublishPacket).Topic, 0) {
+						if qos := oc.Contains(p.(*packet.PublishPacket).Topic); qos != packet.QoS(0x80) {
 							oc.messageId++
 							p.(*packet.PublishPacket).Id = oc.messageId
+							p.(*packet.PublishPacket).QoS = qos
 							oc.channel <- p
 							oc.ack[fmt.Sprintf("s%d", oc.messageId)] = p
 						}
