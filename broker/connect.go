@@ -8,10 +8,10 @@ import (
 	"github.com/MajaSuite/mqtt/packet"
 )
 
-func (b *Broker) processConnect(conn net.Conn) {
+func (b *Broker) newConnection(conn net.Conn) {
 	pkt, err := packet.ReadPacket(conn, b.debug)
 	if err != nil {
-		log.Println("error read packet", err)
+		log.Println("new connection: error read packet", err)
 		conn.Close()
 		return
 	}
@@ -32,40 +32,41 @@ func (b *Broker) processConnect(conn net.Conn) {
 		if len(connPacket.Username) > 0 {
 			err := db.CheckAuth(connPacket.Username, connPacket.Password)
 			if err != nil {
-				log.Printf("authorisation failed: %s", err)
+				log.Printf("new connection: authorisation failed: %s", err)
 				res.ReturnCode = uint8(packet.ConnectBadUserPass)
 			}
 		}
 
-		if len(connPacket.ClientID) == 0 && !connPacket.CleanSession {
-			res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
-		}
-
 		if !connPacket.CleanSession {
-			res.Session = true
-			if len(connPacket.Username) == 0 {
-				res.ReturnCode = uint8(packet.ConnectNotAuthorized)
+			if len(connPacket.ClientID) == 0 {
+				res.ReturnCode = uint8(packet.ConnectIndentifierRejected)
 			} else {
-				connPacket.ClientID = connPacket.Username
+				if len(connPacket.Username) == 0 {
+					res.ReturnCode = uint8(packet.ConnectNotAuthorized)
+				} else {
+					res.Session = true
+					connPacket.ClientID = connPacket.Username
+				}
 			}
 		}
+
 		err = packet.WritePacket(conn, res, b.debug)
 		if err != nil {
-			log.Println("error send response packet", err)
+			log.Println("new connection: error send response packet", err)
 			conn.Close()
 			return
 		}
 
 		// close connection if not authorized
 		if res.ReturnCode != uint8(packet.ConnectAccepted) {
-			log.Println("error connection declined")
+			log.Println("new connection: error connection declined")
 			conn.Close()
 			return
 		}
 
-		if res.Session {
+		if res.Session { // statefull session
 			if b.clients[connPacket.ClientID] != nil {
-				// session already exists in the broker memory
+				// session already exists in the broker memory, use it for current connection
 				b.clients[connPacket.ClientID].conn.Close()
 				b.clients[connPacket.ClientID].conn = conn
 			} else {
@@ -86,8 +87,13 @@ func (b *Broker) processConnect(conn net.Conn) {
 					subpkt.Topics = subPayload
 					b.channel <- subpkt
 				}
+
+				// save will packet
+				if connPacket.Will != nil {
+					b.clients[connPacket.ClientID].will = connPacket.Will
+				}
 			}
-		} else {
+		} else { // new clean session
 			// remove all (if we have)
 			if b.clients[connPacket.ClientID] != nil {
 				b.clients[connPacket.ClientID].conn.Close()
@@ -103,10 +109,11 @@ func (b *Broker) processConnect(conn net.Conn) {
 		}
 
 		// start manage client
-		go b.clients[connPacket.ClientID].Start()
-	} else {
-		log.Println("error: wrong packet. expect CONNECT")
-		conn.Close()
+		b.clients[connPacket.ClientID].Start()
 		return
 	}
+
+	log.Println("new connection: wrong packet. expect CONNECT")
+	conn.Close()
+	return
 }

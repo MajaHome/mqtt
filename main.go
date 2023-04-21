@@ -26,12 +26,12 @@ func main() {
 		panic(err)
 	}
 
-	server := broker.NewServer(*debug)
+	server := broker.NewListener(*debug, *key, *cert)
 	if server == nil {
 		log.Panic("error start listener")
 	}
 
-	server.Manage(broker.NewBroker(*debug))
+	server.Manage()
 
 	finish := make(chan os.Signal, 1)
 	signal.Notify(finish, syscall.SIGINT, syscall.SIGTERM)

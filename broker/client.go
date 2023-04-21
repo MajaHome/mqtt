@@ -104,40 +104,39 @@ func (c *Client) removeSubscription(t packet.SubscribePayload) bool {
 	return false
 }
 
-func (c *Client) Contains(topic string) packet.QoS {
-	var ret = packet.QoS(0x80)
-
+func (c *Client) Contains(topic string, qos packet.QoS) bool {
 	if len(c.subscription) == 0 {
-		return ret
+		return false
 	}
 
 	t := strings.Split(topic, "/")
 
 	// searched topic is empty
 	if len(t) == 0 {
-		return ret
+		return false
 	}
 
 	for _, subs := range c.subscription {
 		var i int = 0 // start from first level
 		s := strings.Split(subs.Topic, "/")
 
+		var found bool
 		for {
 			if len(s) <= i || len(t) <= i {
 				break
 			}
 
 			// subscribed to any topic
-			if s[i] == "#" {
-				ret = subs.QoS
+			if s[i] == "#" && subs.QoS == qos {
+				found = true
 				break
 			}
 
 			// match at this level
 			if s[i] == "*" || s[i] == t[i] {
 				if len(t) == i+1 {
-					if len(t) == len(s) {
-						ret = subs.QoS
+					if len(t) == len(s) && subs.QoS == qos {
+						found = true
 						break
 					}
 					break
@@ -152,12 +151,12 @@ func (c *Client) Contains(topic string) packet.QoS {
 			break
 		}
 
-		if ret != packet.QoS(0x80) {
-			return ret
+		if found {
+			return true
 		}
 	}
 
-	return ret
+	return false
 }
 
 func (c *Client) String() string {

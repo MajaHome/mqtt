@@ -5,12 +5,13 @@ import (
 	"net"
 )
 
-type Server struct {
-	listener net.Listener
+type listener struct {
 	debug    bool
+	listener net.Listener
+	broker   *Broker
 }
 
-func NewServer(debug bool) *Server {
+func NewListener(debug bool, key string, cert string) *listener {
 	l, err := net.Listen("tcp", "0.0.0.0:1883")
 	if err != nil {
 		return nil
@@ -18,10 +19,10 @@ func NewServer(debug bool) *Server {
 
 	log.Println("listen on address", l.Addr())
 
-	return &Server{listener: l, debug: debug}
+	return &listener{debug: debug, listener: l, broker: NewBroker(debug)}
 }
 
-func (s *Server) Manage(broker *Broker) {
+func (s *listener) Manage() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -30,11 +31,11 @@ func (s *Server) Manage(broker *Broker) {
 			continue
 		}
 
-		go broker.processConnect(conn)
+		go s.broker.newConnection(conn)
 	}
 }
 
-func (s *Server) Accept() (net.Conn, error) {
+func (s *listener) Accept() (net.Conn, error) {
 	conn, err := s.listener.Accept()
 	if err != nil {
 		return nil, err
@@ -47,11 +48,11 @@ func (s *Server) Accept() (net.Conn, error) {
 	return conn, nil
 }
 
-func (s *Server) Close() error {
+func (s *listener) Close() error {
 	log.Println("close listener")
 	return s.listener.Close()
 }
 
-func (s *Server) Addr() net.Addr {
+func (s *listener) Addr() net.Addr {
 	return s.listener.Addr()
 }
